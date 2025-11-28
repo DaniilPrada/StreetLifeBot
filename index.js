@@ -1,0 +1,615 @@
+// StreetLife Discord Bot
+// English-only comments
+
+require("dotenv").config();
+const {
+    Client,
+    GatewayIntentBits,
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle
+} = require("discord.js");
+
+// Create the Discord client with required intents
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers // needed for join events and roles
+    ]
+});
+
+// -------------------- ENV SHORTCUTS --------------------
+
+const LOG_RESULTS_CHANNEL_ID = process.env.LOG_RESULTS_CHANNEL_ID?.trim() || null;
+const CHECKER_ROLE_IDS = (process.env.CHECKER_ROLE_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+
+// -------------------- RULES EMBED --------------------
+
+const rulesEmbed = new EmbedBuilder()
+    .setColor(0xD4AF37) // gold premium
+    .setTitle("📌 Правила проверки")
+    .setDescription(
+        "Добро пожаловать на этап проверки перед получением доступа на сервер **StreetLife RP — RU**.\n" +
+        "Чтобы пройти проверку спокойно, уверенно и успешно — пожалуйста, внимательно ознакомьтесь с правилами.\n\n" +
+        "Мы ценим игроков, которые проявляют уважение, зрелость и желание играть качественно.\n"
+    )
+    .addFields(
+        {
+            name: "👤 1. Поведение и отношение",
+            value:
+                "• Относитесь к администрации уважительно.\n" +
+                "• Не перебивайте и не спорьте во время проверки.\n" +
+                "• Общайтесь спокойным, ровным тоном.\n" +
+                "• Соблюдайте культуру речи и элементарную вежливость.\n"
+        },
+        {
+            name: "🎤 2. Требования к голосовой связи",
+            value:
+                "• Микрофон должен быть **чистым и разборчивым**.\n" +
+                "• Без шумов, музыки, посторонних разговоров.\n" +
+                "• Отвечайте спокойно и последовательно.\n"
+        },
+        {
+            name: "📚 3. Проверка RP-подготовки",
+            value:
+                "**От Вас требуется:**\n" +
+                "• Понимать, что такое RP как игра от лица персонажа.\n" +
+                "• Разделять IC и OOC.\n" +
+                "• Уметь объяснять свои действия логично.\n" +
+                "• Мыслить от имени персонажа.\n" +
+                "• Понимать важность атмосферы и взаимодействий.\n"
+        },
+        {
+            name: "🧠 4. Адекватность, мышление и реакция",
+            value:
+                "• Вас могут попросить разыграть RP-ситуацию.\n" +
+                "• Главное — спокойствие и логика.\n" +
+                "• Это не экзамен — оценивается Ваш подход.\n"
+        },
+        {
+            name: "🚫 5. Строго запрещено",
+            value:
+                "• Оскорбления игроков или администрации\n" +
+                "• **Оскорбления национальности или религии**\n" +
+                "• Любые упоминания или оскорбления родных\n" +
+                "• Токсичность, провокации, конфликты\n" +
+                "• Крики, агрессия, истерики\n" +
+                "• Детский или непонятный голос\n" +
+                "• Неуважение к проверяющему\n" +
+                "• Споры с администратором\n" +
+                "• Использование программ изменения голоса\n"
+        },
+        {
+            name: "🛡️ 6. Решение администрации",
+            value:
+                "• При успешном прохождении выдаётся роль **Allowlist**.\n" +
+                "• При отказе можно пройти повторно позже.\n" +
+                "• Решение администрации окончательное.\n"
+        }
+    )
+    .setFooter({
+        text: "StreetLife RP — RU • Проверка игроков",
+        iconURL: "https://cdn.discordapp.com/icons/1439666122881241291/a_c4aff7503fcd4f99868cfc37b7eb23bb.gif?size=512"
+    })
+    .setTimestamp();
+
+// -------------------- ACCESS PANEL (BUTTON) --------------------
+
+const accessEmbed = new EmbedBuilder()
+    .setColor(0x2ecc71)
+    .setTitle("🧪 Получить доступ к проверке")
+    .setDescription(
+        "Добро пожаловать на **StreetLife RP — RU**.\n\n" +
+        "Чтобы пройти проверку и попасть на сервер, нажми на кнопку ниже.\n" +
+        "Тебе будет выдана роль **AwaitingAllowlist**, и администрация увидит, что ты готов к проверке."
+    )
+    .setFooter({ text: "StreetLife RP — RU • Система доступа" });
+
+const accessButton = new ButtonBuilder()
+    .setCustomId("get_access")
+    .setLabel("Получить доступ к проверке")
+    .setStyle(ButtonStyle.Success)
+    .setEmoji("🧪");
+
+// -------------------- CANDIDATE DISCUSSION RULES EMBED --------------------
+
+const candidateRulesEmbed = new EmbedBuilder()
+    .setColor(0x3498db) // blue professional
+    .setTitle("📌 Обсуждение кандидата — Правила и информация")
+    .setDescription(
+        "**Закрытый служебный канал администрации StreetLife RP — RU**\n\n" +
+        "Этот канал используется для внутреннего обсуждения кандидатов после проверки. " +
+        "Здесь оценивается их зрелость, поведение и готовность к RP. " +
+        "Вся информация, находящаяся здесь, является **конфиденциальной**."
+    )
+    .addFields(
+        {
+            name: "🔒 1. Конфиденциальность",
+            value:
+                "• Информация из канала предназначена только для сотрудников.\n" +
+                "• Запрещено обсуждать канал вне него.\n" +
+                "• Нельзя делать скриншоты, записи или копировать сообщения.\n" +
+                "• Информация не передается кандидатам или игрокам."
+        },
+        {
+            name: "🛡️ 2. Доступ и участие",
+            value:
+                "• Доступ имеют только сотрудники, участвующие в проверке.\n" +
+                "• Не приглашать и не отмечать посторонних пользователей.\n" +
+                "• Обмен информацией — только при необходимости и внутри персонала."
+        },
+        {
+            name: "🧩 3. Назначение канала",
+            value:
+                "• Анализ ответов кандидата.\n" +
+                "• Оценка поведения, зрелости и RP-подготовки.\n" +
+                "• Обсуждение итогов проверки и формирование вывода.\n" +
+                "• Поддержание профессионального стандарта сервера."
+        },
+        {
+            name: "📜 4. Формат общения",
+            value:
+                "• Писать только по делу и кратко.\n" +
+                "• Рабочий, спокойный и уважительный тон.\n" +
+                "• Избегать спама, эмоций и оффтопа.\n" +
+                "• Не перебивать друг друга — соблюдать порядок общения."
+        },
+        {
+            name: "🎯 5. Объективность",
+            value:
+                "• Оценка должна быть аргументированной.\n" +
+                "• Не использовать личные эмоции или симпатии.\n" +
+                "• Оценивается только зрелость, поведение и RP-навыки."
+        },
+        {
+            name: "🚫 6. Запрещённые темы",
+            value:
+                "• Личные данные кандидата.\n" +
+                "• Нац./религиозные темы, политика.\n" +
+                "• Конфликты с других серверов.\n" +
+                "• Обсуждение сотрудников вне темы проверки."
+        },
+        {
+            name: "⚖️ 7. Итоговое решение",
+            value:
+                "• Решение принимают сотрудники, проводившие проверку.\n" +
+                "• Старший администратор помогает сформировать финальный вывод.\n" +
+                "• Кандидату сообщается только итоговое решение."
+        },
+        {
+            name: "🎯 8. Цель канала",
+            value:
+                "Создать профессиональное, структурированное пространство " +
+                "для честной оценки кандидатов и поддержки высокого уровня StreetLife RP — RU."
+        }
+    )
+    .setFooter({ text: "StreetLife RP — RU • Внутренний канал персонала" })
+    .setTimestamp();
+
+// -------------------- LOG INFO EMBED (лог-результаты) --------------------
+
+const logInfoEmbed = new EmbedBuilder()
+    .setColor(0x1abc9c)
+    .setTitle("📘 Лог результатов — информация")
+    .setDescription(
+        "**Служебный канал логов проверки игроков на сервере StreetLife RP — RU.**\n\n" +
+        "Здесь бот автоматически фиксирует результаты проверок кандидатов: кто прошёл, кто не прошёл, " +
+        "кто проводил проверку и по какой причине был отказ.\n\n" +
+        "Канал предназначен для **внутреннего использования персоналом** и помогает сохранять прозрачность и историю решений."
+    )
+    .addFields(
+        {
+            name: "📥 Что отправляет бот",
+            value:
+                "• Сообщения об успешном прохождении проверки (✅).\n" +
+                "• Сообщения о непрохождении проверки (❌) с указанием причины.\n" +
+                "• Информацию о том, какой сотрудник проводил проверку.\n" +
+                "• Вся информация используется как история решений по игрокам."
+        },
+        {
+            name: "🔒 Конфиденциальность",
+            value:
+                "• Канал виден только персоналу.\n" +
+                "• Запрещено выносить содержимое канала за его пределы.\n" +
+                "• Нельзя делать скриншоты или пересылать логи кандидатам и игрокам."
+        },
+        {
+            name: "🛠 Формат использования",
+            value:
+                "• Не флудить — писать только по делу (дополнение к логам, если нужно).\n" +
+                "• Допустимы краткие комментарии от персонала по конкретным случаям.\n" +
+                "• Основная цель — чистая и понятная история решений по allowlist."
+        }
+    )
+    .setFooter({ text: "StreetLife RP — RU • Лог результатов проверки игроков" })
+    .setTimestamp();
+
+// -------------------- WELCOME SYSTEM --------------------
+
+async function sendWelcome(member, reason = "auto") {
+    const channelId = process.env.WELCOME_CHANNEL_ID?.trim();
+    console.log(`sendWelcome called for ${member.user.tag}, reason: ${reason}`);
+    console.log("WELCOME_CHANNEL_ID used in code:", channelId);
+
+    if (!channelId) {
+        console.log("No WELCOME_CHANNEL_ID in .env");
+        return;
+    }
+
+    const channel = member.guild.channels.cache.get(channelId);
+    if (!channel) {
+        console.log("Welcome channel not found in cache:", channelId);
+        return;
+    }
+
+    try {
+        const embed = new EmbedBuilder()
+            .setColor(0xD4AF37) // gold premium
+            .setTitle(`👑 Добро пожаловать, ${member.user.username}!`)
+            .setDescription(
+                "👑 Добро пожаловать на легендарный сервер **StreetLife RP — RU**!\n\n" +
+                "Ты только что присоединился к одному из самых качественных и уникальных RP-проектов, где стиль, атмосфера и высокий уровень проработки сочетаются в одном месте.\n\n" +
+                "✨ Здесь тебя ждёт:\n" +
+                "• Авторитетное и дружелюбное сообщество\n" +
+                "• Реалистичная атмосфера города и продуманные фракции\n" +
+                "• Высококачественные системы, созданные для настоящего RP-опыта\n" +
+                "• Профессиональная администрация, готовая помочь в любой момент\n\n" +
+                "📜 Перед началом игры обязательно ознакомься с правилами сервера, чтобы обеспечить себе комфортный и честный игровой процесс.\n\n" +
+                "🎭 Не стесняйся общаться, заводить знакомства и строить свою собственную историю.\n" +
+                "Каждый новый игрок — это важная часть мира StreetLife RP.\n\n" +
+                "Добро пожаловать домой.\n" +
+                "Добро пожаловать в **StreetLife RP — RU**.\n" +
+                "Твоя новая история начинается прямо сейчас. ✨"
+            )
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+            .setFooter({
+                text: "StreetLife RP — RU • Элитный RP опыт",
+                iconURL: member.guild.iconURL({ dynamic: true }) || undefined
+            })
+            .setTimestamp();
+
+        await channel.send({
+            content: `👋 <@${member.id}> добро пожаловать на сервер!`,
+            embeds: [embed]
+        });
+
+        console.log("Welcome message sent to channel:", channelId);
+    } catch (err) {
+        console.error("Failed to send welcome message:", err);
+    }
+}
+
+// -------------------- HELPERS --------------------
+
+// check if member has any checker role
+function hasCheckerRole(member) {
+    if (!CHECKER_ROLE_IDS.length) return true; // if not configured — do not block
+    return CHECKER_ROLE_IDS.some((id) => member.roles.cache.has(id));
+}
+
+// Send log message (if LOG_RESULTS_CHANNEL_ID is set)
+async function sendResultLog(guild, embedOrContent) {
+    if (!LOG_RESULTS_CHANNEL_ID) return;
+    try {
+        const logChannel = guild.channels.cache.get(LOG_RESULTS_CHANNEL_ID);
+        if (!logChannel) return;
+        if (typeof embedOrContent === "string") {
+            await logChannel.send({ content: embedOrContent });
+        } else {
+            await logChannel.send(embedOrContent);
+        }
+    } catch (err) {
+        console.error("Failed to send log message:", err);
+    }
+}
+
+// Build polite DM for fail result
+function buildFailDM(reasonText) {
+    return (
+        "Здравствуйте!\n\n" +
+        "Благодарим Вас за участие в проверке на сервере **StreetLife RP — RU**.\n\n" +
+        "К сожалению, на данный момент Вы не прошли проверку.\n\n" +
+        "Причина отказа:\n" +
+        (reasonText || "не указана") +
+        "\n\n" +
+        "Просим не воспринимать это как критику Вашей личности — подобное случается даже у опытных игроков. " +
+        "Проверка создана для того, чтобы поддерживать высокий стандарт RP и качественную атмосферу на сервере.\n\n" +
+        "Мы рекомендуем обратить внимание на указанную причину, немного подготовиться и попробовать снова позже.\n\n" +
+        "Мы будем рады видеть Вас снова, когда Вы будете готовы пройти повторную проверку.\n\n" +
+        "С уважением,\n" +
+        "Администрация StreetLife RP — RU"
+    );
+}
+
+// -------------------- EVENTS --------------------
+
+client.once("ready", () => {
+    console.log(`Bot is online as ${client.user.tag}`);
+    console.log("WELCOME_CHANNEL_ID from .env:", process.env.WELCOME_CHANNEL_ID);
+    console.log("RULES_CHECK_CHANNEL_ID from .env:", process.env.RULES_CHECK_CHANNEL_ID);
+    console.log("AWAITING_ALLOWLIST_ROLE_ID from .env:", process.env.AWAITING_ALLOWLIST_ROLE_ID);
+    console.log("ALLOWLIST_ROLE_ID from .env:", process.env.ALLOWLIST_ROLE_ID);
+    console.log("GET_ACCESS_CHANNEL_ID from .env:", process.env.GET_ACCESS_CHANNEL_ID);
+    console.log("LOG_RESULTS_CHANNEL_ID from .env:", process.env.LOG_RESULTS_CHANNEL_ID);
+    console.log("CHECKER_ROLE_IDS from .env:", CHECKER_ROLE_IDS);
+});
+
+// Auto welcome when a new member joins
+client.on("guildMemberAdd", async (member) => {
+    console.log("New member joined:", member.user.tag);
+    await sendWelcome(member, "auto-join");
+});
+
+// -------------------- MESSAGE-BASED COMMANDS --------------------
+
+client.on("messageCreate", async (message) => {
+    if (message.author.bot) return;
+
+    const raw = message.content.trim();
+    const content = raw.toLowerCase();
+
+    // Command: !ping
+    if (content === "!ping") {
+        return message.reply("🏓 Понг от StreetLife Bot!");
+    }
+
+    // Command: !say <text>
+    if (content.startsWith("!say ")) {
+        const text = raw.slice(5).trim();
+        if (text.length > 0) {
+            return message.channel.send(text);
+        }
+    }
+
+    // Command: !testwelcome
+    if (content === "!testwelcome") {
+        if (!message.member) {
+            return message.reply("Эту команду нужно использовать на сервере, а не в личных сообщениях.");
+        }
+        await sendWelcome(message.member, "testwelcome");
+        return message.reply("Тестовое приветствие отправлено в канал welcome.");
+    }
+
+    // Command: !sendtestrules
+    if (content === "!sendtestrules") {
+        const rulesChannelId = process.env.RULES_CHECK_CHANNEL_ID?.trim();
+
+        if (!rulesChannelId) {
+            return message.reply("❗ RULES_CHECK_CHANNEL_ID не указан в .env");
+        }
+
+        let channel = message.guild.channels.cache.get(rulesChannelId);
+
+        if (!channel) {
+            try {
+                channel = await message.guild.channels.fetch(rulesChannelId);
+            } catch (err) {
+                console.error("Failed to fetch rules channel:", err);
+                return message.reply("❗ Не удалось найти канал для правил. Проверь ID в .env");
+            }
+        }
+
+        if (!channel) {
+            return message.reply("❗ Канал для правил не найден.");
+        }
+
+        await channel.send({ embeds: [rulesEmbed] });
+
+        return message.reply("📌 Правила проверки отправлены в канал правил.");
+    }
+
+    // Command: !sendaccesspanel
+    if (content === "!sendaccesspanel") {
+        const targetChannelId = process.env.GET_ACCESS_CHANNEL_ID?.trim();
+        let channel = message.guild.channels.cache.get(targetChannelId) || message.channel;
+
+        const row = new ActionRowBuilder().addComponents(accessButton);
+
+        await channel.send({
+            embeds: [accessEmbed],
+            components: [row]
+        });
+
+        return message.reply("🧪 Панель доступа отправлена.");
+    }
+
+    // Command: !sendcandidaterules
+    if (content === "!sendcandidaterules") {
+        return message.channel.send({ embeds: [candidateRulesEmbed] });
+    }
+
+    // Command: !sendloginfo (log channel info)
+    if (content === "!sendloginfo") {
+        if (!message.member || !hasCheckerRole(message.member)) {
+            return message.reply("❗ У вас нет прав использовать эту команду.");
+        }
+        return message.channel.send({ embeds: [logInfoEmbed] });
+    }
+
+    // -------------------- PASS / FAIL COMMANDS --------------------
+
+    // PASS: !прошел проверку @User
+    if (content.startsWith("!прошел проверку")) {
+        if (!message.member || !hasCheckerRole(message.member)) {
+            return message.reply("❗ У вас нет прав использовать эту команду.");
+        }
+
+        const targetMember = message.mentions.members.first();
+        if (!targetMember) {
+            return message.reply("❗ Укажите пользователя через @mention.\nПример: `!прошел проверку @User`");
+        }
+
+        const allowId = process.env.ALLOWLIST_ROLE_ID?.trim();
+        const awaitingId = process.env.AWAITING_ALLOWLIST_ROLE_ID?.trim();
+
+        const allowRole = allowId ? message.guild.roles.cache.get(allowId) : null;
+        const awaitingRole = awaitingId ? message.guild.roles.cache.get(awaitingId) : null;
+
+        if (!allowRole) {
+            return message.reply("❗ Роль Allowlist не найдена. Проверьте ALLOWLIST_ROLE_ID в .env");
+        }
+
+        if (awaitingRole && targetMember.roles.cache.has(awaitingId)) {
+            await targetMember.roles.remove(awaitingRole).catch((err) => {
+                console.error("Failed to remove AwaitingAllowlist:", err);
+            });
+        }
+
+        try {
+            await targetMember.roles.add(allowRole);
+        } catch (err) {
+            console.error("Failed to add Allowlist:", err);
+            return message.reply("❗ Не удалось выдать роль Allowlist. Проверьте права бота.");
+        }
+
+        await message.channel.send(
+            `🎉 <@${targetMember.id}> успешно прошёл проверку и получил доступ к серверу **StreetLife RP — RU**. Добро пожаловать!`
+        );
+
+        try {
+            await targetMember.send(
+                "Здравствуйте!\n\n" +
+                "Поздравляем! Вы успешно прошли проверку на сервере **StreetLife RP — RU**.\n\n" +
+                "Вам выдана роль **Allowlist**, и теперь у Вас есть доступ к серверу.\n\n" +
+                "Добро пожаловать в наш проект!\n\n" +
+                "С уважением,\nАдминистрация StreetLife RP — RU"
+            );
+        } catch (err) {
+            console.error("Failed to send DM (pass):", err);
+        }
+
+        const passLogEmbed = new EmbedBuilder()
+            .setColor(0x2ecc71)
+            .setTitle("✅ Проверка пройдена")
+            .addFields(
+                { name: "Кандидат", value: `<@${targetMember.id}>`, inline: true },
+                { name: "Проверяющий", value: `<@${message.author.id}>`, inline: true }
+            )
+            .setTimestamp();
+
+        await sendResultLog(message.guild, { embeds: [passLogEmbed] });
+
+        return;
+    }
+
+    // FAIL: !не прошел проверку @User причина...
+    if (content.startsWith("!не прошел проверку")) {
+        if (!message.member || !hasCheckerRole(message.member)) {
+            return message.reply("❗ У вас нет прав использовать эту команду.");
+        }
+
+        const targetMember = message.mentions.members.first();
+        if (!targetMember) {
+            return message.reply("❗ Укажите пользователя через @mention.\nПример: `!не прошел проверку @User причина...`");
+        }
+
+        const mention = `<@${targetMember.id}>`;
+        const altMention = `<@!${targetMember.id}>`;
+        let reasonPart = raw;
+
+        reasonPart = reasonPart.replace(/^!не прошел проверку\s*/i, "");
+        reasonPart = reasonPart.replace(mention, "").replace(altMention, "").trim();
+
+        if (reasonPart.endsWith(".")) {
+            reasonPart = reasonPart.slice(0, -1).trim();
+        }
+
+        const reasonText = reasonPart || "не указана";
+
+        const awaitingId = process.env.AWAITING_ALLOWLIST_ROLE_ID?.trim();
+        const awaitingRole = awaitingId ? message.guild.roles.cache.get(awaitingId) : null;
+
+        if (awaitingRole && targetMember.roles.cache.has(awaitingId)) {
+            await targetMember.roles.remove(awaitingRole).catch((err) => {
+                console.error("Failed to remove AwaitingAllowlist on fail:", err);
+            });
+        }
+
+        await message.channel.send(
+            `❌ <@${targetMember.id}> не прошёл проверку. Можно попробовать позже.\n` +
+            `Причина: ${reasonText}`
+        );
+
+        const dmText = buildFailDM(reasonText);
+        try {
+            await targetMember.send(dmText);
+        } catch (err) {
+            console.error("Failed to send DM (fail):", err);
+        }
+
+        const failLogEmbed = new EmbedBuilder()
+            .setColor(0xe74c3c)
+            .setTitle("❌ Проверка не пройдена")
+            .addFields(
+                { name: "Кандидат", value: `<@${targetMember.id}>`, inline: true },
+                { name: "Проверяющий", value: `<@${message.author.id}>`, inline: true },
+                { name: "Причина", value: reasonText, inline: false }
+            )
+            .setTimestamp();
+
+        await sendResultLog(message.guild, { embeds: [failLogEmbed] });
+
+        return;
+    }
+});
+
+// -------------------- BUTTON INTERACTIONS --------------------
+
+client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isButton()) return;
+
+    if (interaction.customId === "get_access") {
+        const roleId = process.env.AWAITING_ALLOWLIST_ROLE_ID?.trim();
+
+        if (!roleId) {
+            return interaction.reply({
+                content: "❗ Роль AwaitingAllowlist не настроена. Сообщи администрации.",
+                ephemeral: true
+            });
+        }
+
+        const member = interaction.member;
+        const role = interaction.guild.roles.cache.get(roleId);
+
+        if (!role) {
+            return interaction.reply({
+                content: "❗ Роль AwaitingAllowlist не найдена на сервере. Сообщи владельцу.",
+                ephemeral: true
+            });
+        }
+
+        if (member.roles.cache.has(roleId)) {
+            return interaction.reply({
+                content: "✅ У тебя уже есть роль ожидания проверки.",
+                ephemeral: true
+            });
+        }
+
+        try {
+            await member.roles.add(role);
+            console.log(`Role AwaitingAllowlist given to ${member.user.tag}`);
+
+            return interaction.reply({
+                content: "✅ Тебе выдана роль **AwaitingAllowlist**. Ожидай администратора для проверки.",
+                ephemeral: true
+            });
+        } catch (err) {
+            console.error("Failed to add AwaitingAllowlist role:", err);
+            return interaction.reply({
+                content: "❗ Не удалось выдать роль. Сообщи администрации.",
+                ephemeral: true
+            });
+        }
+    }
+});
+
+// -------------------- TOKEN & LOGIN --------------------
+
+console.log("Token length:", process.env.TOKEN?.length);
+client.login(process.env.TOKEN);

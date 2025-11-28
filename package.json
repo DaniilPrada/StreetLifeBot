@@ -1,0 +1,13 @@
+{
+  "name": "streetlifebot",
+  "version": "1.0.0",
+  "description": "StreetLife RP — RU Discord Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  }
+}
