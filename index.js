@@ -8,7 +8,9 @@ const {
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle
+    ButtonStyle,
+    ChannelType,
+    PermissionsBitField
 } = require("discord.js");
 
 // Create the Discord client with required intents
@@ -20,6 +22,58 @@ const client = new Client({
         GatewayIntentBits.GuildMembers // needed for join events and roles
     ]
 });
+
+// -------------------- SERVER LAYOUT CONFIG --------------------
+// This layout will be created by the "!setupserver" command (admin only)
+
+const SERVER_LAYOUT = [
+    {
+        name: "📜 ИНФОРМАЦИЯ",
+        children: [
+            { name: "┃📢・новости", type: "text" },
+            { name: "┃📘・правила", type: "text" },
+            { name: "┃🎫・как-попасть-на-сервер", type: "text" }
+        ]
+    },
+    {
+        name: "💬 ОБЩЕНИЕ",
+        children: [
+            { name: "┃💬・чат", type: "text" },
+            { name: "┃📸・галерея", type: "text" },
+            { name: "┃📊・опросы", type: "text" }
+        ]
+    },
+    {
+        name: "🎮 STREETLIFE RP",
+        children: [
+            { name: "┃🚓・streetlife-info", type: "text" },
+            { name: "┃📂・фракции", type: "text" },
+            { name: "┃📝・заявки", type: "text" }
+        ]
+    },
+    {
+        name: "🎧 ВОЙС",
+        children: [
+            { name: "🎤・Общий голосовой", type: "voice" },
+            { name: "🚓・StreetLife RP", type: "voice" },
+            { name: "🎮・Игровой", type: "voice" }
+        ]
+    },
+    {
+        name: "🛡️ ПЕРСОНАЛ",
+        children: [
+            { name: "┃🛡️・админ-чат", type: "text" },
+            { name: "┃📕・отчеты-персонала", type: "text" }
+        ]
+    },
+    {
+        name: "📋 ЛОГИ",
+        children: [
+            { name: "┃📘・логи-проверки", type: "text" },
+            { name: "┃🧪・allowlist-логи", type: "text" }
+        ]
+    }
+];
 
 // -------------------- ENV SHORTCUTS --------------------
 
@@ -430,6 +484,78 @@ client.on("messageCreate", async (message) => {
             return message.reply("❗ У вас нет прав использовать эту команду.");
         }
         return message.channel.send({ embeds: [logInfoEmbed] });
+    }
+
+    // -------------------- SERVER SETUP COMMAND --------------------
+    // Command: !setupserver  (admin only)
+    if (content === "!setupserver") {
+        if (!message.guild) {
+            return message.reply("❗ This command can be used only in a guild.");
+        }
+
+        // Check admin permission
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❗ Эту команду может использовать только администратор.");
+        }
+
+        await message.reply("⏳ Начинаю настраивать структуру сервера StreetLife...");
+
+        try {
+            const guild = message.guild;
+
+            for (const categoryDef of SERVER_LAYOUT) {
+                // Find or create category
+                let category = guild.channels.cache.find(
+                    (c) =>
+                        c.type === ChannelType.GuildCategory &&
+                        c.name === categoryDef.name
+                );
+
+                if (!category) {
+                    category = await guild.channels.create({
+                        name: categoryDef.name,
+                        type: ChannelType.GuildCategory
+                    });
+                    console.log(`Created category: ${categoryDef.name}`);
+                } else {
+                    console.log(`Category already exists: ${categoryDef.name}`);
+                }
+
+                // Create child channels under category
+                for (const chDef of categoryDef.children) {
+                    const existing = guild.channels.cache.find(
+                        (c) =>
+                            c.name === chDef.name &&
+                            c.parentId === category.id
+                    );
+
+                    if (existing) {
+                        console.log(`Channel already exists: ${chDef.name}`);
+                        continue;
+                    }
+
+                    const type =
+                        chDef.type === "voice"
+                            ? ChannelType.GuildVoice
+                            : ChannelType.GuildText;
+
+                    await guild.channels.create({
+                        name: chDef.name,
+                        type,
+                        parent: category
+                    });
+
+                    console.log(`Created channel: ${chDef.name} in category ${categoryDef.name}`);
+                }
+            }
+
+            await message.reply("✅ Структура сервера настроена. Проверь категории и каналы.");
+        } catch (err) {
+            console.error("Failed to setup server:", err);
+            await message.reply("❗ Произошла ошибка при настройке сервера. См. консоль бота.");
+        }
+
+        return;
     }
 
     // -------------------- PASS / FAIL COMMANDS --------------------
