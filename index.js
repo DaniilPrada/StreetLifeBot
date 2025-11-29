@@ -1,5 +1,5 @@
 // StreetLife Discord Bot
-// English-only comments
+// English-only comments only
 
 require("dotenv").config();
 const {
@@ -13,91 +13,145 @@ const {
     PermissionsBitField
 } = require("discord.js");
 
-// Create the Discord client with required intents
+// ----------------------------------------------------
+// CLIENT
+// ----------------------------------------------------
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers // needed for join events and roles
+        GatewayIntentBits.GuildMembers
     ]
 });
 
-// -------------------- SERVER LAYOUT CONFIG --------------------
-// This layout will be created by the "!setupserver" command (admin only)
-
-const SERVER_LAYOUT = [
-    {
-        name: "📜 ИНФОРМАЦИЯ",
-        children: [
-            { name: "┃📢・новости", type: "text" },
-            { name: "┃📘・правила", type: "text" },
-            { name: "┃🎫・как-попасть-на-сервер", type: "text" }
-        ]
-    },
-    {
-        name: "💬 ОБЩЕНИЕ",
-        children: [
-            { name: "┃💬・чат", type: "text" },
-            { name: "┃📸・галерея", type: "text" },
-            { name: "┃📊・опросы", type: "text" }
-        ]
-    },
-    {
-        name: "🎮 STREETLIFE RP",
-        children: [
-            { name: "┃🚓・streetlife-info", type: "text" },
-            { name: "┃📂・фракции", type: "text" },
-            { name: "┃📝・заявки", type: "text" }
-        ]
-    },
-    {
-        name: "🎧 ВОЙС",
-        children: [
-            { name: "🎤・Общий голосовой", type: "voice" },
-            { name: "🚓・StreetLife RP", type: "voice" },
-            { name: "🎮・Игровой", type: "voice" }
-        ]
-    },
-    {
-        name: "🛡️ ПЕРСОНАЛ",
-        children: [
-            { name: "┃🛡️・админ-чат", type: "text" },
-            { name: "┃📕・отчеты-персонала", type: "text" }
-        ]
-    },
-    {
-        name: "📋 ЛОГИ",
-        children: [
-            { name: "┃📘・логи-проверки", type: "text" },
-            { name: "┃🧪・allowlist-логи", type: "text" }
-        ]
-    }
-];
-
-// -------------------- ENV SHORTCUTS --------------------
+// ----------------------------------------------------
+// ENV SHORTCUTS
+// ----------------------------------------------------
 
 const LOG_RESULTS_CHANNEL_ID = process.env.LOG_RESULTS_CHANNEL_ID?.trim() || null;
+
 const CHECKER_ROLE_IDS = (process.env.CHECKER_ROLE_IDS || "")
     .split(",")
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
 
-// NEW: protected channels / categories (never delete)
-const PROTECTED_CHANNEL_IDS = (process.env.PROTECTED_CHANNEL_IDS || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0);
-
+// Protected categories/channels (never delete)
 const PROTECTED_CATEGORY_IDS = (process.env.PROTECTED_CATEGORY_IDS || "")
     .split(",")
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
 
-// -------------------- RULES EMBED --------------------
+const PROTECTED_CHANNEL_IDS = (process.env.PROTECTED_CHANNEL_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+
+// ----------------------------------------------------
+// RUSSIAN LUX SERVER LAYOUT
+// ----------------------------------------------------
+// Each object = category, children = channels inside
+
+const SERVER_LAYOUT = [
+    {
+        name: "📜┃ИНФОРМАЦИЯ СЕРВЕРА",
+        children: [
+            { name: "┃📢・новости-сервера", type: "text" },
+            { name: "┃📘・правила-сервера", type: "text" },
+            { name: "┃🧾・faq-и-гайды", type: "text" },
+            { name: "┃🎫・как-попасть-на-сервер", type: "text" },
+            { name: "┃🔗・полезные-ссылки", type: "text" }
+        ]
+    },
+    {
+        name: "💬┃ОБЩЕНИЕ",
+        children: [
+            { name: "┃💬・общий-чат", type: "text" },
+            { name: "┃📸・скриншоты-и-медиа", type: "text" },
+            { name: "┃📊・опросы-игроков", type: "text" },
+            { name: "┃😂・мемы-и-угар", type: "text" },
+            { name: "┃🤝・знакомства", type: "text" }
+        ]
+    },
+    {
+        name: "🎮┃STREETLIFE RP",
+        children: [
+            { name: "┃🚓・инфо-о-проекте", type: "text" },
+            { name: "┃📂・структуры-и-фракции", type: "text" },
+            { name: "┃📝・заявки-на-фракции", type: "text" },
+            { name: "┃📋・правила-rp", type: "text" },
+            { name: "┃📌・важные-объявления", type: "text" }
+        ]
+    },
+    {
+        name: "🏛┃ГОС.ОРГАНИЗАЦИИ",
+        children: [
+            { name: "┃🚔・полиция", type: "text" },
+            { name: "┃🚑・медики", type: "text" },
+            { name: "┃⚖️・правительство", type: "text" },
+            { name: "┃🚒・спасательные-службы", type: "text" }
+        ]
+    },
+    {
+        name: "⚙️┃RP-ИГРА",
+        children: [
+            { name: "┃📂・rp-ситуации", type: "text" },
+            { name: "┃📜・истории-персонажей", type: "text" },
+            { name: "┃🧠・советы-по-rp", type: "text" },
+            { name: "┃❓・вопросы-по-rp", type: "text" }
+        ]
+    },
+    {
+        name: "🎧┃ГОЛОСОВЫЕ-КАНАЛЫ",
+        children: [
+            { name: "🎤・общий-голосовой", type: "voice" },
+            { name: "🎮・игровой-1", type: "voice" },
+            { name: "🎮・игровой-2", type: "voice" },
+            { name: "🎮・игровой-3", type: "voice" },
+            { name: "🕺・общение-оффтоп", type: "voice" }
+        ]
+    },
+    {
+        name: "🎵┃МУЗЫКА",
+        children: [
+            { name: "┃🎵・музыка-бот", type: "text" },
+            { name: "🎶・music-1", type: "voice" },
+            { name: "🎶・music-2", type: "voice" }
+        ]
+    },
+    {
+        name: "🛠┃ТЕХ.ПОДДЕРЖКА",
+        children: [
+            { name: "┃🆘・тех-поддержка", type: "text" },
+            { name: "┃📨・жалобы-и-апелляции", type: "text" },
+            { name: "┃💡・предложения-по-серверу", type: "text" }
+        ]
+    },
+    {
+        name: "🛡┃ПЕРСОНАЛ",
+        children: [
+            { name: "┃🛡️・админ-чат", type: "text" },
+            { name: "┃📕・отчеты-персонала", type: "text" },
+            { name: "┃⚠️・важно-для-персонала", type: "text" }
+        ]
+    },
+    {
+        name: "📋┃ЛОГИ",
+        children: [
+            { name: "┃📘・логи-проверки", type: "text" },
+            { name: "┃🧪・allowlist-логи", type: "text" },
+            { name: "┃🔍・mod-logs", type: "text" }
+        ]
+    }
+];
+
+// ----------------------------------------------------
+// EMBEDS (rules, access, candidate, log info)
+// ----------------------------------------------------
 
 const rulesEmbed = new EmbedBuilder()
-    .setColor(0xD4AF37) // gold premium
+    .setColor(0xD4AF37)
     .setTitle("📌 Правила проверки")
     .setDescription(
         "Добро пожаловать на этап проверки перед получением доступа на сервер **StreetLife RP — RU**.\n" +
@@ -140,15 +194,15 @@ const rulesEmbed = new EmbedBuilder()
         {
             name: "🚫 5. Строго запрещено",
             value:
-                "• Оскорбления игроков или администрации\n" +
-                "• **Оскорбления национальности или религии**\n" +
-                "• Любые упоминания или оскорбления родных\n" +
-                "• Токсичность, провокации, конфликты\n" +
-                "• Крики, агрессия, истерики\n" +
-                "• Детский или непонятный голос\n" +
-                "• Неуважение к проверяющему\n" +
-                "• Споры с администратором\n" +
-                "• Использование программ изменения голоса\n"
+                "• Оскорбления игроков или администрации.\n" +
+                "• Оскорбления национальности или религии.\n" +
+                "• Упоминания или оскорбления родных.\n" +
+                "• Токсичность, провокации, конфликты.\n" +
+                "• Крики, агрессия, истерики.\n" +
+                "• Детский или непонятный голос.\n" +
+                "• Неуважение к проверяющему.\n" +
+                "• Споры с администратором.\n" +
+                "• Использование программ изменения голоса.\n"
         },
         {
             name: "🛡️ 6. Решение администрации",
@@ -160,11 +214,10 @@ const rulesEmbed = new EmbedBuilder()
     )
     .setFooter({
         text: "StreetLife RP — RU • Проверка игроков",
-        iconURL: "https://cdn.discordapp.com/icons/1439666122881241291/a_c4aff7503fcd4f99868cfc37b7eb23bb.gif?size=512"
+        iconURL:
+            "https://cdn.discordapp.com/icons/1439666122881241291/a_c4aff7503fcd4f99868cfc37b7eb23bb.gif?size=512"
     })
     .setTimestamp();
-
-// -------------------- ACCESS PANEL (BUTTON) --------------------
 
 const accessEmbed = new EmbedBuilder()
     .setColor(0x2ecc71)
@@ -182,10 +235,8 @@ const accessButton = new ButtonBuilder()
     .setStyle(ButtonStyle.Success)
     .setEmoji("🧪");
 
-// -------------------- CANDIDATE DISCUSSION RULES EMBED --------------------
-
 const candidateRulesEmbed = new EmbedBuilder()
-    .setColor(0x3498db) // blue professional
+    .setColor(0x3498db)
     .setTitle("📌 Обсуждение кандидата — Правила и информация")
     .setDescription(
         "**Закрытый служебный канал администрации StreetLife RP — RU**\n\n" +
@@ -200,14 +251,14 @@ const candidateRulesEmbed = new EmbedBuilder()
                 "• Информация из канала предназначена только для сотрудников.\n" +
                 "• Запрещено обсуждать канал вне него.\n" +
                 "• Нельзя делать скриншоты, записи или копировать сообщения.\n" +
-                "• Информация не передается кандидатам или игрокам."
+                "• Информация не передается кандидатам или игрокам.\n"
         },
         {
             name: "🛡️ 2. Доступ и участие",
             value:
                 "• Доступ имеют только сотрудники, участвующие в проверке.\n" +
-                "• Не приглашать и не отмечать посторонних пользователей.\n" +
-                "• Обмен информацией — только при необходимости и внутри персонала."
+                "• Не приглашать посторонних пользователей.\n" +
+                "• Обмен информацией — только при необходимости и внутри персонала.\n"
         },
         {
             name: "🧩 3. Назначение канала",
@@ -215,22 +266,21 @@ const candidateRulesEmbed = new EmbedBuilder()
                 "• Анализ ответов кандидата.\n" +
                 "• Оценка поведения, зрелости и RP-подготовки.\n" +
                 "• Обсуждение итогов проверки и формирование вывода.\n" +
-                "• Поддержание профессионального стандарта сервера."
+                "• Поддержание профессионального стандарта сервера.\n"
         },
         {
             name: "📜 4. Формат общения",
             value:
                 "• Писать только по делу и кратко.\n" +
                 "• Рабочий, спокойный и уважительный тон.\n" +
-                "• Избегать спама, эмоций и оффтопа.\n" +
-                "• Не перебивать друг друга — соблюдать порядок общения."
+                "• Избегать спама, эмоций и оффтопа.\n"
         },
         {
             name: "🎯 5. Объективность",
             value:
                 "• Оценка должна быть аргументированной.\n" +
                 "• Не использовать личные эмоции или симпатии.\n" +
-                "• Оценивается только зрелость, поведение и RP-навыки."
+                "• Оценивается только зрелость, поведение и RP-навыки.\n"
         },
         {
             name: "🚫 6. Запрещённые темы",
@@ -238,26 +288,18 @@ const candidateRulesEmbed = new EmbedBuilder()
                 "• Личные данные кандидата.\n" +
                 "• Нац./религиозные темы, политика.\n" +
                 "• Конфликты с других серверов.\n" +
-                "• Обсуждение сотрудников вне темы проверки."
+                "• Обсуждение сотрудников вне темы проверки.\n"
         },
         {
             name: "⚖️ 7. Итоговое решение",
             value:
                 "• Решение принимают сотрудники, проводившие проверку.\n" +
-                "• Старший администратор помогает сформировать финальный вывод.\n" +
-                "• Кандидату сообщается только итоговое решение."
-        },
-        {
-            name: "🎯 8. Цель канала",
-            value:
-                "Создать профессиональное, структурированное пространство " +
-                "для честной оценки кандидатов и поддержки высокого уровня StreetLife RP — RU."
+                "• Старший администратор формирует финальный вывод.\n" +
+                "• Кандидату сообщается только итоговое решение.\n"
         }
     )
     .setFooter({ text: "StreetLife RP — RU • Внутренний канал персонала" })
     .setTimestamp();
-
-// -------------------- LOG INFO EMBED (лог-результаты) --------------------
 
 const logInfoEmbed = new EmbedBuilder()
     .setColor(0x1abc9c)
@@ -274,28 +316,21 @@ const logInfoEmbed = new EmbedBuilder()
             value:
                 "• Сообщения об успешном прохождении проверки (✅).\n" +
                 "• Сообщения о непрохождении проверки (❌) с указанием причины.\n" +
-                "• Информацию о том, какой сотрудник проводил проверку.\n" +
-                "• Вся информация используется как история решений по игрокам."
+                "• Информацию о том, какой сотрудник проводил проверку.\n"
         },
         {
             name: "🔒 Конфиденциальность",
             value:
                 "• Канал виден только персоналу.\n" +
-                "• Запрещено выносить содержимое канала за его пределы.\n" +
-                "• Нельзя делать скриншоты или пересылать логи кандидатам и игрокам."
-        },
-        {
-            name: "🛠 Формат использования",
-            value:
-                "• Не флудить — писать только по делу (дополнение к логам, если нужно).\n" +
-                "• Допустимы краткие комментарии от персонала по конкретным случаям.\n" +
-                "• Основная цель — чистая и понятная история решений по allowlist."
+                "• Запрещено выносить содержимое канала за его пределы.\n"
         }
     )
     .setFooter({ text: "StreetLife RP — RU • Лог результатов проверки игроков" })
     .setTimestamp();
 
-// -------------------- WELCOME SYSTEM --------------------
+// ----------------------------------------------------
+// WELCOME SYSTEM
+// ----------------------------------------------------
 
 async function sendWelcome(member, reason = "auto") {
     const channelId = process.env.WELCOME_CHANNEL_ID?.trim();
@@ -315,22 +350,18 @@ async function sendWelcome(member, reason = "auto") {
 
     try {
         const embed = new EmbedBuilder()
-            .setColor(0xD4AF37) // gold premium
+            .setColor(0xD4AF37)
             .setTitle(`👑 Добро пожаловать, ${member.user.username}!`)
             .setDescription(
                 "👑 Добро пожаловать на легендарный сервер **StreetLife RP — RU**!\n\n" +
-                "Ты только что присоединился к одному из самых качественных и уникальных RP-проектов, где стиль, атмосфера и высокий уровень проработки сочетаются в одном месте.\n\n" +
+                "Ты только что присоединился к одному из самых качественных и уникальных RP-проектов.\n\n" +
                 "✨ Здесь тебя ждёт:\n" +
                 "• Авторитетное и дружелюбное сообщество\n" +
                 "• Реалистичная атмосфера города и продуманные фракции\n" +
-                "• Высококачественные системы, созданные для настоящего RP-опыта\n" +
-                "• Профессиональная администрация, готовая помочь в любой момент\n\n" +
-                "📜 Перед началом игры обязательно ознакомься с правилами сервера, чтобы обеспечить себе комфортный и честный игровой процесс.\n\n" +
-                "🎭 Не стесняйся общаться, заводить знакомства и строить свою собственную историю.\n" +
-                "Каждый новый игрок — это важная часть мира StreetLife RP.\n\n" +
-                "Добро пожаловать домой.\n" +
-                "Добро пожаловать в **StreetLife RP — RU**.\n" +
-                "Твоя новая история начинается прямо сейчас. ✨"
+                "• Высококачественные системы RP\n" +
+                "• Профессиональная администрация\n\n" +
+                "📜 Обязательно ознакомься с правилами.\n\n" +
+                "Добро пожаловать в **StreetLife RP — RU**. Твоя новая история начинается прямо сейчас. ✨"
             )
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
             .setFooter({
@@ -350,15 +381,15 @@ async function sendWelcome(member, reason = "auto") {
     }
 }
 
-// -------------------- HELPERS --------------------
+// ----------------------------------------------------
+// HELPERS
+// ----------------------------------------------------
 
-// check if member has any checker role
 function hasCheckerRole(member) {
-    if (!CHECKER_ROLE_IDS.length) return true; // if not configured — do not block
+    if (!CHECKER_ROLE_IDS.length) return true;
     return CHECKER_ROLE_IDS.some((id) => member.roles.cache.has(id));
 }
 
-// Send log message (if LOG_RESULTS_CHANNEL_ID is set)
 async function sendResultLog(guild, embedOrContent) {
     if (!LOG_RESULTS_CHANNEL_ID) return;
     try {
@@ -383,59 +414,192 @@ function buildFailDM(reasonText) {
         "Причина отказа:\n" +
         (reasonText || "не указана") +
         "\n\n" +
-        "Просим не воспринимать это как критику Вашей личности — подобное случается даже у опытных игроков. " +
-        "Проверка создана для того, чтобы поддерживать высокий стандарт RP и качественную атмосферу на сервере.\n\n" +
-        "Мы рекомендуем обратить внимание на указанную причину, немного подготовиться и попробовать снова позже.\n\n" +
-        "Мы будем рады видеть Вас снова, когда Вы будете готовы пройти повторную проверку.\n\n" +
-        "С уважением,\n" +
-        "Администрация StreetLife RP — RU"
+        "Просим не воспринимать это как критику Вашей личности.\n\n" +
+        "Рекомендуем подготовиться и попробовать снова позже.\n\n" +
+        "С уважением,\nАдминистрация StreetLife RP — RU"
     );
 }
 
-// -------------------- EVENTS --------------------
+// ----------------------------------------------------
+// SERVER LAYOUT HELPERS (BUILD / CLEAN / DELETE)
+// ----------------------------------------------------
+
+// Create or get category by name
+async function findOrCreateCategory(guild, name) {
+    let category = guild.channels.cache.find(
+        (c) => c.type === ChannelType.GuildCategory && c.name === name
+    );
+
+    if (!category) {
+        category = await guild.channels.create({
+            name,
+            type: ChannelType.GuildCategory
+        });
+        console.log(`Created category: ${name}`);
+    } else {
+        console.log(`Category exists: ${name}`);
+    }
+
+    return category;
+}
+
+// Create channel under specific category
+async function findOrCreateChannelInCategory(guild, category, def) {
+    const existing = guild.channels.cache.find(
+        (c) =>
+            c.name === def.name &&
+            c.parentId === category.id
+    );
+
+    if (existing) {
+        console.log(`Channel exists: ${def.name} in ${category.name}`);
+        return existing;
+    }
+
+    const type =
+        def.type === "voice" ? ChannelType.GuildVoice : ChannelType.GuildText;
+
+    const ch = await guild.channels.create({
+        name: def.name,
+        type,
+        parent: category.id
+    });
+
+    console.log(`Created channel: ${def.name} in ${category.name}`);
+    return ch;
+}
+
+// Main function: build categories + cleanup inside them
+async function buildLuxLayout(guild) {
+    for (const categoryDef of SERVER_LAYOUT) {
+        const category = await findOrCreateCategory(guild, categoryDef.name);
+
+        const isCategoryProtected = PROTECTED_CATEGORY_IDS.includes(category.id);
+        const requiredNames = new Set(categoryDef.children.map((c) => c.name));
+
+        // Cleanup inside this category (remove channels not in layout, unless protected)
+        for (const ch of guild.channels.cache.filter(
+            (c) => c.parentId === category.id
+        ).values()) {
+            if (requiredNames.has(ch.name)) continue;
+            if (PROTECTED_CHANNEL_IDS.includes(ch.id)) continue;
+            if (isCategoryProtected) continue;
+
+            console.log(`Deleting extra channel: ${ch.name} (${ch.id}) in ${category.name}`);
+            await ch.delete("StreetLifeBot cleanup: not in layout");
+        }
+
+        // Ensure required channels exist
+        for (const chDef of categoryDef.children) {
+            await findOrCreateChannelInCategory(guild, category, chDef);
+        }
+    }
+}
+
+// Extra cleanup: delete categories and root channels NOT in layout and NOT protected
+async function cleanExtraStructure(guild) {
+    const layoutCategoryNames = new Set(SERVER_LAYOUT.map((c) => c.name));
+
+    // Delete categories not in layout and not protected
+    for (const cat of guild.channels.cache.filter(
+        (c) => c.type === ChannelType.GuildCategory
+    ).values()) {
+        if (layoutCategoryNames.has(cat.name)) continue;
+        if (PROTECTED_CATEGORY_IDS.includes(cat.id)) continue;
+
+        console.log(`Deleting extra category: ${cat.name} (${cat.id})`);
+        await cat.delete("StreetLifeBot cleanextraserver: category not in layout");
+    }
+
+    // Delete text/voice channels without parent (root) that are not protected
+    for (const ch of guild.channels.cache.filter(
+        (c) =>
+            (c.type === ChannelType.GuildText || c.type === ChannelType.GuildVoice) &&
+            !c.parentId
+    ).values()) {
+        if (PROTECTED_CHANNEL_IDS.includes(ch.id)) continue;
+
+        console.log(`Deleting extra root channel: ${ch.name} (${ch.id})`);
+        await ch.delete("StreetLifeBot cleanextraserver: root channel not protected");
+    }
+}
+
+// Delete entire category and its channels
+async function deleteCategoryByName(guild, name) {
+    const category = guild.channels.cache.find(
+        (c) => c.type === ChannelType.GuildCategory && c.name === name
+    );
+
+    if (!category) return { ok: false, reason: "not_found" };
+    if (PROTECTED_CATEGORY_IDS.includes(category.id)) {
+        return { ok: false, reason: "protected" };
+    }
+
+    // Delete children
+    for (const ch of guild.channels.cache.filter(
+        (c) => c.parentId === category.id
+    ).values()) {
+        if (PROTECTED_CHANNEL_IDS.includes(ch.id)) continue;
+        console.log(`Deleting channel in category delete: ${ch.name} (${ch.id})`);
+        await ch.delete("StreetLifeBot deletecategory");
+    }
+
+    console.log(`Deleting category: ${category.name} (${category.id})`);
+    await category.delete("StreetLifeBot deletecategory");
+
+    return { ok: true };
+}
+
+// ----------------------------------------------------
+// EVENTS
+// ----------------------------------------------------
 
 client.once("ready", () => {
     console.log(`Bot is online as ${client.user.tag}`);
-    console.log("WELCOME_CHANNEL_ID from .env:", process.env.WELCOME_CHANNEL_ID);
-    console.log("RULES_CHECK_CHANNEL_ID from .env:", process.env.RULES_CHECK_CHANNEL_ID);
-    console.log("AWAITING_ALLOWLIST_ROLE_ID from .env:", process.env.AWAITING_ALLOWLIST_ROLE_ID);
-    console.log("ALLOWLIST_ROLE_ID from .env:", process.env.ALLOWLIST_ROLE_ID);
-    console.log("GET_ACCESS_CHANNEL_ID from .env:", process.env.GET_ACCESS_CHANNEL_ID);
-    console.log("LOG_RESULTS_CHANNEL_ID from .env:", process.env.LOG_RESULTS_CHANNEL_ID);
-    console.log("CHECKER_ROLE_IDS from .env:", CHECKER_ROLE_IDS);
-    console.log("PROTECTED_CHANNEL_IDS from .env:", PROTECTED_CHANNEL_IDS);
-    console.log("PROTECTED_CATEGORY_IDS from .env:", PROTECTED_CATEGORY_IDS);
+    console.log("WELCOME_CHANNEL_ID:", process.env.WELCOME_CHANNEL_ID);
+    console.log("RULES_CHECK_CHANNEL_ID:", process.env.RULES_CHECK_CHANNEL_ID);
+    console.log("AWAITING_ALLOWLIST_ROLE_ID:", process.env.AWAITING_ALLOWLIST_ROLE_ID);
+    console.log("ALLOWLIST_ROLE_ID:", process.env.ALLOWLIST_ROLE_ID);
+    console.log("GET_ACCESS_CHANNEL_ID:", process.env.GET_ACCESS_CHANNEL_ID);
+    console.log("LOG_RESULTS_CHANNEL_ID:", process.env.LOG_RESULTS_CHANNEL_ID);
+    console.log("CHECKER_ROLE_IDS:", CHECKER_ROLE_IDS);
+    console.log("PROTECTED_CATEGORY_IDS:", PROTECTED_CATEGORY_IDS);
+    console.log("PROTECTED_CHANNEL_IDS:", PROTECTED_CHANNEL_IDS);
 });
 
-// Auto welcome when a new member joins
 client.on("guildMemberAdd", async (member) => {
     console.log("New member joined:", member.user.tag);
     await sendWelcome(member, "auto-join");
 });
 
-// -------------------- MESSAGE-BASED COMMANDS --------------------
+// ----------------------------------------------------
+// MESSAGE COMMANDS
+// ----------------------------------------------------
 
 client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
+    if (!message.guild) return;
 
     const raw = message.content.trim();
     const content = raw.toLowerCase();
+    const args = raw.split(/\s+/);
+    const cmd = args[0].toLowerCase();
 
-    // Command: !ping
-    if (content === "!ping") {
+    // Simple ping
+    if (cmd === "!ping") {
         return message.reply("🏓 Понг от StreetLife Bot!");
     }
 
-    // Command: !say <text>
-    if (content.startsWith("!say ")) {
-        const text = raw.slice(5).trim();
+    // !say <text>
+    if (cmd === "!say") {
+        const text = raw.slice("!say".length).trim();
         if (text.length > 0) {
             return message.channel.send(text);
         }
     }
 
-    // Command: !testwelcome
-    if (content === "!testwelcome") {
+    // !testwelcome
+    if (cmd === "!testwelcome") {
         if (!message.member) {
             return message.reply("Эту команду нужно использовать на сервере, а не в личных сообщениях.");
         }
@@ -443,16 +607,14 @@ client.on("messageCreate", async (message) => {
         return message.reply("Тестовое приветствие отправлено в канал welcome.");
     }
 
-    // Command: !sendtestrules
-    if (content === "!sendtestrules") {
+    // !sendtestrules
+    if (cmd === "!sendtestrules") {
         const rulesChannelId = process.env.RULES_CHECK_CHANNEL_ID?.trim();
-
         if (!rulesChannelId) {
             return message.reply("❗ RULES_CHECK_CHANNEL_ID не указан в .env");
         }
 
         let channel = message.guild.channels.cache.get(rulesChannelId);
-
         if (!channel) {
             try {
                 channel = await message.guild.channels.fetch(rulesChannelId);
@@ -467,12 +629,11 @@ client.on("messageCreate", async (message) => {
         }
 
         await channel.send({ embeds: [rulesEmbed] });
-
         return message.reply("📌 Правила проверки отправлены в канал правил.");
     }
 
-    // Command: !sendaccesspanel
-    if (content === "!sendaccesspanel") {
+    // !sendaccesspanel
+    if (cmd === "!sendaccesspanel") {
         const targetChannelId = process.env.GET_ACCESS_CHANNEL_ID?.trim();
         let channel = message.guild.channels.cache.get(targetChannelId) || message.channel;
 
@@ -486,115 +647,119 @@ client.on("messageCreate", async (message) => {
         return message.reply("🧪 Панель доступа отправлена.");
     }
 
-    // Command: !sendcandidaterules
-    if (content === "!sendcandidaterules") {
+    // !sendcandidaterules
+    if (cmd === "!sendcandidaterules") {
         return message.channel.send({ embeds: [candidateRulesEmbed] });
     }
 
-    // Command: !sendloginfo (log channel info)
-    if (content === "!sendloginfo") {
+    // !sendloginfo
+    if (cmd === "!sendloginfo") {
         if (!message.member || !hasCheckerRole(message.member)) {
             return message.reply("❗ У вас нет прав использовать эту команду.");
         }
         return message.channel.send({ embeds: [logInfoEmbed] });
     }
 
-    // -------------------- SERVER SETUP COMMAND --------------------
-    // Command: !setupserver  (admin only)
-    if (content === "!setupserver") {
-        if (!message.guild) {
-            return message.reply("❗ This command can be used only in a guild.");
-        }
-
-        // Check admin permission
+    // ------------------------------------------------
+    // LUX SERVER SETUP: !setupserverlux
+    // ------------------------------------------------
+    if (cmd === "!setupserverlux") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❗ Эту команду может использовать только администратор.");
         }
 
-        await message.reply("⏳ Начинаю настраивать структуру сервера StreetLife...");
+        await message.reply("⏳ Начинаю настраивать структуру сервера StreetLife (российский люкс)...");
 
         try {
-            const guild = message.guild;
-
-            for (const categoryDef of SERVER_LAYOUT) {
-                // Find or create category
-                let category = guild.channels.cache.find(
-                    (c) =>
-                        c.type === ChannelType.GuildCategory &&
-                        c.name === categoryDef.name
-                );
-
-                if (!category) {
-                    category = await guild.channels.create({
-                        name: categoryDef.name,
-                        type: ChannelType.GuildCategory
-                    });
-                    console.log(`Created category: ${categoryDef.name}`);
-                } else {
-                    console.log(`Category already exists: ${categoryDef.name}`);
-                }
-
-                // If category itself is protected – remember
-                const categoryProtected =
-                    PROTECTED_CATEGORY_IDS.includes(category.id);
-
-                // Build set of required names for this category
-                const requiredNames = new Set(
-                    categoryDef.children.map((c) => c.name)
-                );
-
-                // CLEANUP: delete channels in this category that are NOT in layout and NOT protected
-                for (const ch of guild.channels.cache.filter(
-                    (c) => c.parentId === category.id
-                ).values()) {
-                    if (requiredNames.has(ch.name)) continue; // needed
-                    if (PROTECTED_CHANNEL_IDS.includes(ch.id)) continue; // protected by ID
-                    if (categoryProtected) continue; // whole category protected
-
-                    console.log(`Deleting extra channel: ${ch.name} (${ch.id})`);
-                    await ch.delete("StreetLifeBot cleanup (not in layout)");
-                }
-
-                // CREATE / ENSURE: child channels under category
-                for (const chDef of categoryDef.children) {
-                    const existing = guild.channels.cache.find(
-                        (c) =>
-                            c.name === chDef.name &&
-                            c.parentId === category.id
-                    );
-
-                    if (existing) {
-                        console.log(`Channel already exists: ${chDef.name}`);
-                        continue;
-                    }
-
-                    const type =
-                        chDef.type === "voice"
-                            ? ChannelType.GuildVoice
-                            : ChannelType.GuildText;
-
-                    await guild.channels.create({
-                        name: chDef.name,
-                        type,
-                        parent: category.id
-                    });
-
-                    console.log(
-                        `Created channel: ${chDef.name} in category ${categoryDef.name}`
-                    );
-                }
-            }
-
-            await message.reply("✅ Структура сервера настроена. Проверь категории и каналы.");
+            await buildLuxLayout(message.guild);
+            await message.reply("✅ Структура категорий и каналов обновлена по роскошному макету.");
         } catch (err) {
-            console.error("Failed to setup server:", err);
-            await message.reply("❗ Произошла ошибка при настройке сервера. См. консоль бота.");
+            console.error("buildLuxLayout failed:", err);
+            await message.reply("❗ Ошибка при настройке структуры. См. логи бота.");
         }
 
         return;
     }
 
-    // -------------------- PASS / FAIL COMMANDS --------------------
+    // ------------------------------------------------
+    // CLEAN EXTRA: !cleanextraserver
+    // deletes categories/channels not in layout and not protected
+    // ------------------------------------------------
+    if (cmd === "!cleanextraserver") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❗ Эту команду может использовать только администратор.");
+        }
+
+        await message.reply(
+            "⚠️ Начинаю умную очистку: будут удалены категории и каналы, которых нет в макете и не защищены."
+        );
+
+        try {
+            await cleanExtraStructure(message.guild);
+            await message.reply("✅ Очистка завершена. Лишние категории/каналы удалены.");
+        } catch (err) {
+            console.error("cleanExtraStructure failed:", err);
+            await message.reply("❗ Ошибка при очистке. См. логи бота.");
+        }
+
+        return;
+    }
+
+    // ------------------------------------------------
+    // DELETE CATEGORY: !deletecategory <exact_name>
+    // ------------------------------------------------
+    if (cmd === "!deletecategory") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❗ Эту команду может использовать только администратор.");
+        }
+
+        const targetName = raw.slice("!deletecategory".length).trim();
+        if (!targetName) {
+            return message.reply("❗ Укажи точное название категории.\nПример: `!deletecategory 💬┃ОБЩЕНИЕ`");
+        }
+
+        const result = await deleteCategoryByName(message.guild, targetName);
+
+        if (!result.ok && result.reason === "not_found") {
+            return message.reply("❗ Категория с таким названием не найдена.");
+        }
+        if (!result.ok && result.reason === "protected") {
+            return message.reply("❗ Эта категория защищена и не может быть удалена (в PROTECTED_CATEGORY_IDS).");
+        }
+
+        return message.reply(`✅ Категория \`${targetName}\` и её каналы были удалены (кроме защищённых).`);
+    }
+
+    // ------------------------------------------------
+    // DELETE CHANNEL: !deletechannel #mention
+    // ------------------------------------------------
+    if (cmd === "!deletechannel") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❗ Эту команду может использовать только администратор.");
+        }
+
+        const targetChannel = message.mentions.channels.first();
+        if (!targetChannel) {
+            return message.reply("❗ Укажи канал через #упоминание. Пример: `!deletechannel #общий-чат`");
+        }
+
+        if (PROTECTED_CHANNEL_IDS.includes(targetChannel.id)) {
+            return message.reply("❗ Этот канал защищён и не может быть удалён.");
+        }
+
+        try {
+            const name = targetChannel.name;
+            await targetChannel.delete("StreetLifeBot deletechannel");
+            return message.reply(`✅ Канал \`${name}\` удалён.`);
+        } catch (err) {
+            console.error("deletechannel failed:", err);
+            return message.reply("❗ Не удалось удалить канал. Проверь права бота.");
+        }
+    }
+
+    // ------------------------------------------------
+    // PASS / FAIL COMMANDS
+    // ------------------------------------------------
 
     // PASS: !прошел проверку @User
     if (content.startsWith("!прошел проверку")) {
@@ -668,7 +833,9 @@ client.on("messageCreate", async (message) => {
 
         const targetMember = message.mentions.members.first();
         if (!targetMember) {
-            return message.reply("❗ Укажите пользователя через @mention.\nПример: `!не прошел проверку @User причина...`");
+            return message.reply(
+                "❗ Укажите пользователя через @mention.\nПример: `!не прошел проверку @User причина...`"
+            );
         }
 
         const mention = `<@${targetMember.id}>`;
@@ -694,8 +861,7 @@ client.on("messageCreate", async (message) => {
         }
 
         await message.channel.send(
-            `❌ <@${targetMember.id}> не прошёл проверку. Можно попробовать позже.\n` +
-            `Причина: ${reasonText}`
+            `❌ <@${targetMember.id}> не прошёл проверку. Можно попробовать позже.\nПричина: ${reasonText}`
         );
 
         const dmText = buildFailDM(reasonText);
@@ -721,7 +887,9 @@ client.on("messageCreate", async (message) => {
     }
 });
 
-// -------------------- BUTTON INTERACTIONS --------------------
+// ----------------------------------------------------
+// BUTTON INTERACTIONS
+// ----------------------------------------------------
 
 client.on("interactionCreate", async (interaction) => {
     if (!interaction.isButton()) return;
@@ -771,7 +939,9 @@ client.on("interactionCreate", async (interaction) => {
     }
 });
 
-// -------------------- TOKEN & LOGIN --------------------
+// ----------------------------------------------------
+// TOKEN & LOGIN
+// ----------------------------------------------------
 
 console.log("Token length:", process.env.TOKEN?.length);
 client.login(process.env.TOKEN);
