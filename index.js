@@ -1,1048 +1,814 @@
-// StreetLife Discord Bot
-// English-only comments only
+// index.js
+// Discord moderation bot with warns, mutes, bans and escalation ladder
+// Messages to Discord are in Russian
 
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 const {
-    Client,
-    GatewayIntentBits,
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    ChannelType,
-    PermissionsBitField
+  Client,
+  GatewayIntentBits,
+  Partials,
+  PermissionsBitField,
 } = require("discord.js");
 
-// DB helpers for protection
-const {
-    initDb,
-    getProtectedCategoryIds,
-    getProtectedChannelIds,
-    addProtectedCategory,
-    removeProtectedCategory,
-    addProtectedChannel,
-    removeProtectedChannel
-} = require("./db");
-
-// ----------------------------------------------------
-// CLIENT
-// ----------------------------------------------------
+if (!process.env.TOKEN) {
+  console.error("❌ Missing TOKEN in .env file");
+  process.exit(1);
+}
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
-    ]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
+  ],
+  partials: [Partials.Channel, Partials.GuildMember, Partials.Message],
 });
 
-// Init DB
-initDb();
+const PREFIX = process.env.PREFIX || "!";
+const DATA_FILE = path.join(__dirname, "punishments.json");
 
-// ----------------------------------------------------
-// ENV SHORTCUTS
-// ----------------------------------------------------
+// -----------------------------------------------------
+// Data load / save
+// -----------------------------------------------------
+let data = { guilds: {} };
 
-const LOG_RESULTS_CHANNEL_ID = process.env.LOG_RESULTS_CHANNEL_ID?.trim() || null;
-
-const CHECKER_ROLE_IDS = (process.env.CHECKER_ROLE_IDS || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0);
-
-// ----------------------------------------------------
-// RUSSIAN LUX SERVER LAYOUT
-// ----------------------------------------------------
-
-const SERVER_LAYOUT = [
-    {
-        name: "📜┃ИНФОРМАЦИЯ СЕРВЕРА",
-        children: [
-            { name: "┃📢・новости-сервера", type: "text" },
-            { name: "┃📘・правила-сервера", type: "text" },
-            { name: "┃🧾・faq-и-гайды", type: "text" },
-            { name: "┃🎫・как-попасть-на-сервер", type: "text" },
-            { name: "┃🔗・полезные-ссылки", type: "text" }
-        ]
-    },
-    {
-        name: "💬┃ОБЩЕНИЕ",
-        children: [
-            { name: "┃💬・общий-чат", type: "text" },
-            { name: "┃📸・скриншоты-и-медиа", type: "text" },
-            { name: "┃📊・опросы-игроков", type: "text" },
-            { name: "┃😂・мемы-и-угар", type: "text" },
-            { name: "┃🤝・знакомства", type: "text" }
-        ]
-    },
-    {
-        name: "🎮┃STREETLIFE RP",
-        children: [
-            { name: "┃🚓・инфо-о-проекте", type: "text" },
-            { name: "┃📂・структуры-и-фракции", type: "text" },
-            { name: "┃📝・заявки-на-фракции", type: "text" },
-            { name: "┃📋・правила-rp", type: "text" },
-            { name: "┃📌・важные-объявления", type: "text" }
-        ]
-    },
-    {
-        name: "🏛┃ГОС.ОРГАНИЗАЦИИ",
-        children: [
-            { name: "┃🚔・полиция", type: "text" },
-            { name: "┃🚑・медики", type: "text" },
-            { name: "┃⚖️・правительство", type: "text" },
-            { name: "┃🚒・спасательные-службы", type: "text" }
-        ]
-    },
-    {
-        name: "⚙️┃RP-ИГРА",
-        children: [
-            { name: "┃📂・rp-ситуации", type: "text" },
-            { name: "┃📜・истории-персонажей", type: "text" },
-            { name: "┃🧠・советы-по-rp", type: "text" },
-            { name: "┃❓・вопросы-по-rp", type: "text" }
-        ]
-    },
-    {
-        name: "🎧┃ГОЛОСОВЫЕ-КАНАЛЫ",
-        children: [
-            { name: "🎤・общий-голосовой", type: "voice" },
-            { name: "🎮・игровой-1", type: "voice" },
-            { name: "🎮・игровой-2", type: "voice" },
-            { name: "🎮・игровой-3", type: "voice" },
-            { name: "🕺・общение-оффтоп", type: "voice" }
-        ]
-    },
-    {
-        name: "🎵┃МУЗЫКА",
-        children: [
-            { name: "┃🎵・музыка-бот", type: "text" },
-            { name: "🎶・music-1", type: "voice" },
-            { name: "🎶・music-2", type: "voice" }
-        ]
-    },
-    {
-        name: "🛠┃ТЕХ.ПОДДЕРЖКА",
-        children: [
-            { name: "┃🆘・тех-поддержка", type: "text" },
-            { name: "┃📨・жалобы-и-апелляции", type: "text" },
-            { name: "┃💡・предложения-по-серверу", type: "text" }
-        ]
-    },
-    {
-        name: "🛡┃ПЕРСОНАЛ",
-        children: [
-            { name: "┃🛡️・админ-чат", type: "text" },
-            { name: "┃📕・отчеты-персонала", type: "text" },
-            { name: "┃⚠️・важно-для-персонала", type: "text" }
-        ]
-    },
-    {
-        name: "📋┃ЛОГИ",
-        children: [
-            { name: "┃📘・логи-проверки", type: "text" },
-            { name: "┃🧪・allowlist-логи", type: "text" },
-            { name: "┃🔍・mod-logs", type: "text" }
-        ]
+function loadData() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, "utf8");
+      data = JSON.parse(raw);
     }
-];
-
-// ----------------------------------------------------
-// EMBEDS (rules, access, candidate, log info)
-// ----------------------------------------------------
-
-const rulesEmbed = new EmbedBuilder()
-    .setColor(0xD4AF37)
-    .setTitle("📌 Правила проверки")
-    .setDescription(
-        "Добро пожаловать на этап проверки перед получением доступа на сервер **StreetLife RP — RU**.\n" +
-        "Чтобы пройти проверку спокойно, уверенно и успешно — пожалуйста, внимательно ознакомьтесь с правилами.\n\n" +
-        "Мы ценим игроков, которые проявляют уважение, зрелость и желание играть качественно.\n"
-    )
-    .addFields(
-        {
-            name: "👤 1. Поведение и отношение",
-            value:
-                "• Относитесь к администрации уважительно.\n" +
-                "• Не перебивайте и не спорьте во время проверки.\n" +
-                "• Общайтесь спокойным, ровным тоном.\n" +
-                "• Соблюдайте культуру речи и элементарную вежливость.\n"
-        },
-        {
-            name: "🎤 2. Требования к голосовой связи",
-            value:
-                "• Микрофон должен быть **чистым и разборчивым**.\n" +
-                "• Без шумов, музыки, посторонних разговоров.\n" +
-                "• Отвечайте спокойно и последовательно.\n"
-        },
-        {
-            name: "📚 3. Проверка RP-подготовки",
-            value:
-                "**От Вас требуется:**\n" +
-                "• Понимать, что такое RP как игра от лица персонажа.\n" +
-                "• Разделять IC и OOC.\n" +
-                "• Уметь объяснять свои действия логично.\n" +
-                "• Мыслить от имени персонажа.\n" +
-                "• Понимать важность атмосферы и взаимодействий.\n"
-        },
-        {
-            name: "🧠 4. Адекватность, мышление и реакция",
-            value:
-                "• Вас могут попросить разыграть RP-ситуацию.\n" +
-                "• Главное — спокойствие и логика.\n" +
-                "• Это не экзамен — оценивается Ваш подход.\n"
-        },
-        {
-            name: "🚫 5. Строго запрещено",
-            value:
-                "• Оскорбления игроков или администрации.\n" +
-                "• Оскорбления национальности или религии.\n" +
-                "• Упоминания или оскорбления родных.\n" +
-                "• Токсичность, провокации, конфликты.\n" +
-                "• Крики, агрессия, истерики.\n" +
-                "• Детский или непонятный голос.\n" +
-                "• Неуважение к проверяющему.\n" +
-                "• Споры с администратором.\n" +
-                "• Использование программ изменения голоса.\n"
-        },
-        {
-            name: "🛡️ 6. Решение администрации",
-            value:
-                "• При успешном прохождении выдаётся роль **Allowlist**.\n" +
-                "• При отказе можно пройти повторно позже.\n" +
-                "• Решение администрации окончательное.\n"
-        }
-    )
-    .setFooter({
-        text: "StreetLife RP — RU • Проверка игроков",
-        iconURL:
-            "https://cdn.discordapp.com/icons/1439666122881241291/a_c4aff7503fcd4f99868cfc37b7eb23bb.gif?size=512"
-    })
-    .setTimestamp();
-
-const accessEmbed = new EmbedBuilder()
-    .setColor(0x2ecc71)
-    .setTitle("🧪 Получить доступ к проверке")
-    .setDescription(
-        "Добро пожаловать на **StreetLife RP — RU**.\n\n" +
-        "Чтобы пройти проверку и попасть на сервер, нажми на кнопку ниже.\n" +
-        "Тебе будет выдана роль **AwaitingAllowlist**, и администрация увидит, что ты готов к проверке."
-    )
-    .setFooter({ text: "StreetLife RP — RU • Система доступа" });
-
-const accessButton = new ButtonBuilder()
-    .setCustomId("get_access")
-    .setLabel("Получить доступ к проверке")
-    .setStyle(ButtonStyle.Success)
-    .setEmoji("🧪");
-
-const candidateRulesEmbed = new EmbedBuilder()
-    .setColor(0x3498db)
-    .setTitle("📌 Обсуждение кандидата — Правила и информация")
-    .setDescription(
-        "**Закрытый служебный канал администрации StreetLife RP — RU**\n\n" +
-        "Этот канал используется для внутреннего обсуждения кандидатов после проверки. " +
-        "Здесь оценивается их зрелость, поведение и готовность к RP. " +
-        "Вся информация, находящаяся здесь, является **конфиденциальной**."
-    )
-    .addFields(
-        {
-            name: "🔒 1. Конфиденциальность",
-            value:
-                "• Информация из канала предназначена только для сотрудников.\n" +
-                "• Запрещено обсуждать канал вне него.\n" +
-                "• Нельзя делать скриншоты, записи или копировать сообщения.\n" +
-                "• Информация не передается кандидатам или игрокам.\n"
-        },
-        {
-            name: "🛡️ 2. Доступ и участие",
-            value:
-                "• Доступ имеют только сотрудники, участвующие в проверке.\n" +
-                "• Не приглашать посторонних пользователей.\n" +
-                "• Обмен информацией — только при необходимости и внутри персонала.\n"
-        },
-        {
-            name: "🧩 3. Назначение канала",
-            value:
-                "• Анализ ответов кандидата.\n" +
-                "• Оценка поведения, зрелости и RP-подготовки.\n" +
-                "• Обсуждение итогов проверки и формирование вывода.\n" +
-                "• Поддержание профессионального стандарта сервера.\n"
-        },
-        {
-            name: "📜 4. Формат общения",
-            value:
-                "• Писать только по делу и кратко.\n" +
-                "• Рабочий, спокойный и уважительный тон.\n" +
-                "• Избегать спама, эмоций и оффтопа.\n"
-        },
-        {
-            name: "🎯 5. Объективность",
-            value:
-                "• Оценка должна быть аргументированной.\n" +
-                "• Не использовать личные эмоции или симпатии.\n" +
-                "• Оценивается только зрелость, поведение и RP-навыки.\n"
-        },
-        {
-            name: "🚫 6. Запрещённые темы",
-            value:
-                "• Личные данные кандидата.\n" +
-                "• Нац./религиозные темы, политика.\n" +
-                "• Конфликты с других серверов.\n" +
-                "• Обсуждение сотрудников вне темы проверки.\n"
-        },
-        {
-            name: "⚖️ 7. Итоговое решение",
-            value:
-                "• Решение принимают сотрудники, проводившие проверку.\n" +
-                "• Старший администратор формирует финальный вывод.\n" +
-                "• Кандидату сообщается только итоговое решение.\n"
-        }
-    )
-    .setFooter({ text: "StreetLife RP — RU • Внутренний канал персонала" })
-    .setTimestamp();
-
-const logInfoEmbed = new EmbedBuilder()
-    .setColor(0x1abc9c)
-    .setTitle("📘 Лог результатов — информация")
-    .setDescription(
-        "**Служебный канал логов проверки игроков на сервере StreetLife RP — RU.**\n\n" +
-        "Здесь бот автоматически фиксирует результаты проверок кандидатов: кто прошёл, кто не прошёл, " +
-        "кто проводил проверку и по какой причине был отказ.\n\n" +
-        "Канал предназначен для **внутреннего использования персоналом** и помогает сохранять прозрачность и историю решений."
-    )
-    .addFields(
-        {
-            name: "📥 Что отправляет бот",
-            value:
-                "• Сообщения об успешном прохождении проверки (✅).\n" +
-                "• Сообщения о непрохождении проверки (❌) с указанием причины.\n" +
-                "• Информацию о том, какой сотрудник проводил проверку.\n"
-        },
-        {
-            name: "🔒 Конфиденциальность",
-            value:
-                "• Канал виден только персоналу.\n" +
-                "• Запрещено выносить содержимое канала за его пределы.\n"
-        }
-    )
-    .setFooter({ text: "StreetLife RP — RU • Лог результатов проверки игроков" })
-    .setTimestamp();
-
-// ----------------------------------------------------
-// WELCOME SYSTEM
-// ----------------------------------------------------
-
-async function sendWelcome(member, reason = "auto") {
-    const channelId = process.env.WELCOME_CHANNEL_ID?.trim();
-    console.log(`sendWelcome called for ${member.user.tag}, reason: ${reason}`);
-    console.log("WELCOME_CHANNEL_ID used in code:", channelId);
-
-    if (!channelId) {
-        console.log("No WELCOME_CHANNEL_ID in .env");
-        return;
-    }
-
-    const channel = member.guild.channels.cache.get(channelId);
-    if (!channel) {
-        console.log("Welcome channel not found in cache:", channelId);
-        return;
-    }
-
-    try {
-        const embed = new EmbedBuilder()
-            .setColor(0xD4AF37)
-            .setTitle(`👑 Добро пожаловать, ${member.user.username}!`)
-            .setDescription(
-                "👑 Добро пожаловать на легендарный сервер **StreetLife RP — RU**!\n\n" +
-                "Ты только что присоединился к одному из самых качественных и уникальных RP-проектов.\n\n" +
-                "✨ Здесь тебя ждёт:\n" +
-                "• Авторитетное и дружелюбное сообщество\n" +
-                "• Реалистичная атмосфера города и продуманные фракции\n" +
-                "• Высококачественные системы RP\n" +
-                "• Профессиональная администрация\n\n" +
-                "📜 Обязательно ознакомься с правилами.\n\n" +
-                "Добро пожаловать в **StreetLife RP — RU**. Твоя новая история начинается прямо сейчас. ✨"
-            )
-            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-            .setFooter({
-                text: "StreetLife RP — RU • Элитный RP опыт",
-                iconURL: member.guild.iconURL({ dynamic: true }) || undefined
-            })
-            .setTimestamp();
-
-        await channel.send({
-            content: `👋 <@${member.id}> добро пожаловать на сервер!`,
-            embeds: [embed]
-        });
-
-        console.log("Welcome message sent to channel:", channelId);
-    } catch (err) {
-        console.error("Failed to send welcome message:", err);
-    }
+  } catch (err) {
+    console.error("Failed to load data file:", err);
+    data = { guilds: {} };
+  }
 }
 
-// ----------------------------------------------------
-// HELPERS
-// ----------------------------------------------------
-
-function hasCheckerRole(member) {
-    if (!CHECKER_ROLE_IDS.length) return true;
-    return CHECKER_ROLE_IDS.some((id) => member.roles.cache.has(id));
+function saveData() {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
+  } catch (err) {
+    console.error("Failed to save data file:", err);
+  }
 }
 
-async function sendResultLog(guild, embedOrContent) {
-    if (!LOG_RESULTS_CHANNEL_ID) return;
-    try {
-        const logChannel = guild.channels.cache.get(LOG_RESULTS_CHANNEL_ID);
-        if (!logChannel) return;
-        if (typeof embedOrContent === "string") {
-            await logChannel.send({ content: embedOrContent });
-        } else {
-            await logChannel.send(embedOrContent);
-        }
-    } catch (err) {
-        console.error("Failed to send log message:", err);
-    }
+loadData();
+
+// Ensure structures exist
+function getUserData(guildId, userId) {
+  if (!data.guilds[guildId]) {
+    data.guilds[guildId] = { users: {} };
+  }
+  if (!data.guilds[guildId].users[userId]) {
+    data.guilds[guildId].users[userId] = {
+      warns: [],   // { timestamp, reason, moderatorId, moderatorTag }
+      bans: [],    // { timestamp, durationMs, reason, moderatorId, moderatorTag }
+      banLevel: 0, // 0 -> 1 day, 1 -> 3 days, etc.
+    };
+  }
+  return data.guilds[guildId].users[userId];
 }
 
-// Build polite DM for fail result
-function buildFailDM(reasonText) {
-    return (
-        "Здравствуйте!\n\n" +
-        "Благодарим Вас за участие в проверке на сервере **StreetLife RP — RU**.\n\n" +
-        "К сожалению, на данный момент Вы не прошли проверку.\n\n" +
-        "Причина отказа:\n" +
-        (reasonText || "не указана") +
-        "\n\n" +
-        "Просим не воспринимать это как критику Вашей личности.\n\n" +
-        "Рекомендуем подготовиться и попробовать снова позже.\n\n" +
-        "С уважением,\nАдминистрация StreetLife RP — RU"
-    );
+// -----------------------------------------------------
+// Helpers
+// -----------------------------------------------------
+
+// Parse duration like "10m", "2h", "1d", "30s"
+function parseDuration(str) {
+  if (!str) return null;
+  const match = str.match(/^(\d+)(s|m|h|d)$/i);
+  if (!match) return null;
+  const value = parseInt(match[1], 10);
+  const unit = match[2].toLowerCase();
+
+  let ms = 0;
+  if (unit === "s") ms = value * 1000;
+  if (unit === "m") ms = value * 60 * 1000;
+  if (unit === "h") ms = value * 60 * 60 * 1000;
+  if (unit === "d") ms = value * 24 * 60 * 60 * 1000;
+  return ms;
 }
 
-// ----------------------------------------------------
-// SERVER LAYOUT HELPERS
-// ----------------------------------------------------
+// Format ms to short string
+function formatDuration(ms) {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
 
-async function findOrCreateCategory(guild, name) {
-    let category = guild.channels.cache.find(
-        (c) => c.type === ChannelType.GuildCategory && c.name === name
-    );
-
-    if (!category) {
-        category = await guild.channels.create({
-            name,
-            type: ChannelType.GuildCategory
-        });
-        console.log(`Created category: ${name}`);
-    } else {
-        console.log(`Category exists: ${name}`);
-    }
-
-    return category;
+  if (days > 0) return `${days}d`;
+  if (hours > 0) return `${hours}h`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${seconds}s`;
 }
 
-async function findOrCreateChannelInCategory(guild, category, def) {
-    const existing = guild.channels.cache.find(
-        (c) => c.name === def.name && c.parentId === category.id
-    );
-
-    if (existing) {
-        console.log(`Channel exists: ${def.name} in ${category.name}`);
-        return existing;
-    }
-
-    const type =
-        def.type === "voice" ? ChannelType.GuildVoice : ChannelType.GuildText;
-
-    const ch = await guild.channels.create({
-        name: def.name,
-        type,
-        parent: category.id
+// Get or create "Muted" role and configure permissions
+async function getOrCreateMutedRole(guild) {
+  let mutedRole = guild.roles.cache.find((r) => r.name === "Muted");
+  if (!mutedRole) {
+    mutedRole = await guild.roles.create({
+      name: "Muted",
+      color: 0x555555,
+      reason: "Auto-created muted role for moderation bot",
     });
 
-    console.log(`Created channel: ${def.name} in ${category.name}`);
-    return ch;
+    // Deny sending messages / speaking in all channels
+    for (const [, channel] of guild.channels.cache) {
+      try {
+        await channel.permissionOverwrites.edit(mutedRole, {
+          SendMessages: false,
+          AddReactions: false,
+          Speak: false,
+          Connect: false,
+        });
+      } catch (err) {
+        console.warn(
+          `Failed to set permissions for channel ${channel.id}:`,
+          err.message
+        );
+      }
+    }
+  }
+  return mutedRole;
 }
 
-// Build layout + cleanup inside categories
-async function buildLuxLayout(guild) {
-    const protectedCategories = await getProtectedCategoryIds(guild.id);
-    const protectedChannels = await getProtectedChannelIds(guild.id);
-
-    for (const categoryDef of SERVER_LAYOUT) {
-        const category = await findOrCreateCategory(guild, categoryDef.name);
-        const isCategoryProtected = protectedCategories.includes(category.id);
-
-        const requiredNames = new Set(categoryDef.children.map((c) => c.name));
-
-        // Cleanup inside category
-        for (const ch of guild.channels.cache
-            .filter((c) => c.parentId === category.id)
-            .values()) {
-            if (requiredNames.has(ch.name)) continue;
-            if (protectedChannels.includes(ch.id)) continue;
-            if (isCategoryProtected) continue;
-
-            console.log(`Deleting extra channel: ${ch.name} (${ch.id}) in ${category.name}`);
-            await ch.delete("StreetLifeBot cleanup: not in layout");
-        }
-
-        // Ensure required channels
-        for (const chDef of categoryDef.children) {
-            await findOrCreateChannelInCategory(guild, category, chDef);
-        }
-    }
+// Check moderator permissions
+function isModerator(member) {
+  if (!member) return false;
+  return (
+    member.permissions.has(PermissionsBitField.Flags.KickMembers) ||
+    member.permissions.has(PermissionsBitField.Flags.BanMembers) ||
+    member.permissions.has(PermissionsBitField.Flags.ModerateMembers) ||
+    member.permissions.has(PermissionsBitField.Flags.Administrator)
+  );
 }
 
-// Delete categories/channels not in layout and not protected
-async function cleanExtraStructure(guild) {
-    const protectedCategories = await getProtectedCategoryIds(guild.id);
-    const protectedChannels = await getProtectedChannelIds(guild.id);
+// Remove expired warns (cooldown 4 days)
+const WARN_LIFETIME_MS = 4 * 24 * 60 * 60 * 1000;
 
-    const layoutCategoryNames = new Set(SERVER_LAYOUT.map((c) => c.name));
-
-    // Delete categories not in layout
-    for (const cat of guild.channels.cache
-        .filter((c) => c.type === ChannelType.GuildCategory)
-        .values()) {
-        if (layoutCategoryNames.has(cat.name)) continue;
-        if (protectedCategories.includes(cat.id)) continue;
-
-        console.log(`Deleting extra category: ${cat.name} (${cat.id})`);
-        await cat.delete("StreetLifeBot cleanextraserver: category not in layout");
-    }
-
-    // Delete root channels not protected
-    for (const ch of guild.channels.cache
-        .filter(
-            (c) =>
-                (c.type === ChannelType.GuildText ||
-                    c.type === ChannelType.GuildVoice) &&
-                !c.parentId
-        )
-        .values()) {
-        if (protectedChannels.includes(ch.id)) continue;
-
-        console.log(`Deleting extra root channel: ${ch.name} (${ch.id})`);
-        await ch.delete("StreetLifeBot cleanextraserver: root channel not protected");
-    }
+function cleanupWarns(userData) {
+  const now = Date.now();
+  userData.warns = userData.warns.filter(
+    (w) => now - w.timestamp <= WARN_LIFETIME_MS
+  );
 }
 
-// Delete full category by name
-async function deleteCategoryByName(guild, name) {
-    const protectedCategories = await getProtectedCategoryIds(guild.id);
-    const protectedChannels = await getProtectedChannelIds(guild.id);
+// -----------------------------------------------------
+// Auto escalation on warn
+// -----------------------------------------------------
 
-    const category = guild.channels.cache.find(
-        (c) => c.type === ChannelType.GuildCategory && c.name === name
+async function applyAutoPunishment(message, member, userData) {
+  const guild = message.guild;
+  if (!guild) return;
+
+  cleanupWarns(userData);
+  const activeWarns = userData.warns.length;
+
+  // Thresholds:
+  // 3 warns -> 6h mute
+  // 4 warns -> 12h mute
+  // 5 warns -> 24h mute
+  // 6 warns -> auto ban (1d, 3d, 7d, 14d, 30d)
+  if (activeWarns === 3) {
+    const durationMs = 6 * 60 * 60 * 1000;
+    await autoMute(
+      message,
+      member,
+      durationMs,
+      "Набрано 3 активных предупреждения"
+    );
+  } else if (activeWarns === 4) {
+    const durationMs = 12 * 60 * 60 * 1000;
+    await autoMute(
+      message,
+      member,
+      durationMs,
+      "Набрано 4 активных предупреждения"
+    );
+  } else if (activeWarns === 5) {
+    const durationMs = 24 * 60 * 60 * 1000;
+    await autoMute(
+      message,
+      member,
+      durationMs,
+      "Набрано 5 активных предупреждений"
+    );
+  } else if (activeWarns === 6) {
+    // Escalating ban ladder
+    const banSteps = [1, 3, 7, 14, 30]; // days
+    const level = Math.min(userData.banLevel, banSteps.length - 1);
+    const days = banSteps[level];
+    const durationMs = days * 24 * 60 * 60 * 1000;
+
+    userData.banLevel = Math.min(userData.banLevel + 1, banSteps.length - 1);
+    saveData();
+
+    await autoBan(
+      message,
+      member,
+      durationMs,
+      `Набрано 6 активных предупреждений (уровень бана ${level + 1}, ${days}d)`
+    );
+  }
+}
+
+async function autoMute(message, member, durationMs, reason) {
+  const guild = message.guild;
+  if (!guild) return;
+
+  try {
+    const mutedRole = await getOrCreateMutedRole(guild);
+    await member.roles.add(mutedRole, reason);
+    await message.channel.send(
+      `🔇 | ${member.user.tag} автоматически получил мут на ${formatDuration(
+        durationMs
+      )}. Причина: ${reason}`
     );
 
-    if (!category) return { ok: false, reason: "not_found" };
-    if (protectedCategories.includes(category.id)) {
-        return { ok: false, reason: "protected" };
-    }
-
-    for (const ch of guild.channels.cache
-        .filter((c) => c.parentId === category.id)
-        .values()) {
-        if (protectedChannels.includes(ch.id)) continue;
-
-        console.log(`Deleting channel in category delete: ${ch.name} (${ch.id})`);
-        await ch.delete("StreetLifeBot deletecategory");
-    }
-
-    console.log(`Deleting category: ${category.name} (${category.id})`);
-    await category.delete("StreetLifeBot deletecategory");
-
-    return { ok: true };
+    setTimeout(async () => {
+      try {
+        if (member.roles.cache.has(mutedRole.id)) {
+          await member.roles.remove(mutedRole, "Auto unmute after duration");
+        }
+      } catch (err) {
+        console.warn("Failed to auto-unmute:", err.message);
+      }
+    }, durationMs);
+  } catch (err) {
+    console.error("Auto mute error:", err);
+    await message.channel.send(
+      "❌ Не удалось выдать автоматический мут (проверьте права/роль)."
+    );
+  }
 }
 
-// ----------------------------------------------------
-// EVENTS
-// ----------------------------------------------------
+async function autoBan(message, member, durationMs, reason) {
+  const guild = message.guild;
+  if (!guild) return;
+
+  try {
+    const userId = member.id;
+    const tag = member.user.tag;
+
+    const userData = getUserData(guild.id, userId);
+    userData.bans.push({
+      timestamp: Date.now(),
+      durationMs,
+      reason,
+      moderatorId: message.author.id,
+      moderatorTag: message.author.tag,
+    });
+    saveData();
+
+    await member.ban({ reason });
+
+    await message.channel.send(
+      `⛔ | ${tag} автоматически забанен на ${formatDuration(
+        durationMs
+      )}. Причина: ${reason}`
+    );
+
+    setTimeout(async () => {
+      try {
+        await guild.members.unban(userId, "Auto unban after duration");
+      } catch (err) {
+        console.warn(
+          "Failed to auto-unban (maybe already unbanned):",
+          err.message
+        );
+      }
+    }, durationMs);
+  } catch (err) {
+    console.error("Auto ban error:", err);
+    await message.channel.send(
+      "❌ Не удалось выдать автоматический бан (проверьте права)."
+    );
+  }
+}
+
+// -----------------------------------------------------
+// Bot events
+// -----------------------------------------------------
 
 client.once("ready", () => {
-    console.log(`Bot is online as ${client.user.tag}`);
-    console.log("WELCOME_CHANNEL_ID:", process.env.WELCOME_CHANNEL_ID);
-    console.log("RULES_CHECK_CHANNEL_ID:", process.env.RULES_CHECK_CHANNEL_ID);
-    console.log("AWAITING_ALLOWLIST_ROLE_ID:", process.env.AWAITING_ALLOWLIST_ROLE_ID);
-    console.log("ALLOWLIST_ROLE_ID:", process.env.ALLOWLIST_ROLE_ID);
-    console.log("GET_ACCESS_CHANNEL_ID:", process.env.GET_ACCESS_CHANNEL_ID);
-    console.log("LOG_RESULTS_CHANNEL_ID:", process.env.LOG_RESULTS_CHANNEL_ID);
-    console.log("CHECKER_ROLE_IDS:", CHECKER_ROLE_IDS);
+  console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-client.on("guildMemberAdd", async (member) => {
-    console.log("New member joined:", member.user.tag);
-    await sendWelcome(member, "auto-join");
-});
-
-// ----------------------------------------------------
-// MESSAGE COMMANDS
-// ----------------------------------------------------
-
+// Message commands
 client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
-    if (!message.guild) return;
+  if (!message.guild) return;
+  if (message.author.bot) return;
+  if (!message.content.startsWith(PREFIX)) return;
 
-    const raw = message.content.trim();
-    const content = raw.toLowerCase();
-    const args = raw.split(/\s+/);
-    const cmd = args[0].toLowerCase();
+  const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
+  const command = args.shift().toLowerCase();
 
-    // Simple ping
-    if (cmd === "!ping") {
-        return message.reply("🏓 Понг от StreetLife Bot!");
+  const moderator = isModerator(message.member);
+
+  // -------------------------------------------
+  // !warn @user <reason>
+  // -------------------------------------------
+  if (command === "warn") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
     }
 
-    // !say <text>
-    if (cmd === "!say") {
-        const text = raw.slice("!say".length).trim();
-        if (text.length > 0) {
-            return message.channel.send(text);
-        }
+    const target =
+      message.mentions.members.first() ||
+      message.guild.members.cache.get(args[0]);
+
+    if (!target) {
+      return message.reply(
+        "❗ Использование: `!warn @User <причина>`"
+      );
     }
 
-    // !testwelcome
-    if (cmd === "!testwelcome") {
-        if (!message.member) {
-            return message.reply("Эту команду нужно использовать на сервере, а не в личных сообщениях.");
-        }
-        await sendWelcome(message.member, "testwelcome");
-        return message.reply("Тестовое приветствие отправлено в канал welcome.");
+    if (target.id === message.author.id) {
+      return message.reply("❌ Нельзя выдать предупреждение самому себе.");
     }
 
-    // !sendtestrules
-    if (cmd === "!sendtestrules") {
-        const rulesChannelId = process.env.RULES_CHECK_CHANNEL_ID?.trim();
-        if (!rulesChannelId) {
-            return message.reply("❗ RULES_CHECK_CHANNEL_ID не указан в .env");
-        }
+    args.shift(); // remove mention/id from args
+    const reason = args.join(" ") || "Причина не указана";
 
-        let channel = message.guild.channels.cache.get(rulesChannelId);
-        if (!channel) {
-            try {
-                channel = await message.guild.channels.fetch(rulesChannelId);
-            } catch (err) {
-                console.error("Failed to fetch rules channel:", err);
-                return message.reply("❗ Не удалось найти канал для правил. Проверь ID в .env");
-            }
-        }
+    const userData = getUserData(message.guild.id, target.id);
+    userData.warns.push({
+      timestamp: Date.now(),
+      reason,
+      moderatorId: message.author.id,
+      moderatorTag: message.author.tag,
+    });
+    cleanupWarns(userData);
+    saveData();
 
-        if (!channel) {
-            return message.reply("❗ Канал для правил не найден.");
-        }
+    await message.channel.send(
+      `⚠️ | Пользователь ${target.user.tag} получил предупреждение. Причина: ${reason}\n` +
+        `Активных предупреждений (за последние 4 дня): ${userData.warns.length}`
+    );
 
-        await channel.send({ embeds: [rulesEmbed] });
-        return message.reply("📌 Правила проверки отправлены в канал правил.");
+    await applyAutoPunishment(message, target, userData);
+    return;
+  }
+
+  // -------------------------------------------
+  // !unwarn @user <number>
+  // -------------------------------------------
+  if (command === "unwarn") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
     }
 
-    // !sendaccesspanel
-    if (cmd === "!sendaccesspanel") {
-        const targetChannelId = process.env.GET_ACCESS_CHANNEL_ID?.trim();
-        let channel = message.guild.channels.cache.get(targetChannelId) || message.channel;
+    const target =
+      message.mentions.members.first() ||
+      message.guild.members.cache.get(args[0]);
 
-        const row = new ActionRowBuilder().addComponents(accessButton);
-
-        await channel.send({
-            embeds: [accessEmbed],
-            components: [row]
-        });
-
-        return message.reply("🧪 Панель доступа отправлена.");
+    if (!target) {
+      return message.reply(
+        "❗ Использование: `!unwarn @User <номер>`"
+      );
     }
 
-    // !sendcandidaterules
-    if (cmd === "!sendcandidaterules") {
-        return message.channel.send({ embeds: [candidateRulesEmbed] });
+    args.shift(); // remove user
+    const warnNumber = parseInt(args.shift(), 10);
+
+    if (!warnNumber || warnNumber < 1) {
+      return message.reply("❗ Укажите корректный номер предупреждения.");
     }
 
-    // !sendloginfo
-    if (cmd === "!sendloginfo") {
-        if (!message.member || !hasCheckerRole(message.member)) {
-            return message.reply("❗ У вас нет прав использовать эту команду.");
-        }
-        return message.channel.send({ embeds: [logInfoEmbed] });
+    const userData = getUserData(message.guild.id, target.id);
+    cleanupWarns(userData);
+
+    if (warnNumber > userData.warns.length) {
+      return message.reply("❗ Предупреждения с таким номером не существует.");
     }
 
-    // ------------------------------------------------
-    // PROTECTION COMMANDS
-    // ------------------------------------------------
+    const removed = userData.warns.splice(warnNumber - 1, 1)[0];
+    saveData();
 
-    // !protectchannel #channel
-    if (cmd === "!protectchannel") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❗ Эту команду может использовать только администратор.");
-        }
+    await message.channel.send(
+      `🗑️ | У пользователя ${target.user.tag} удалено предупреждение №${warnNumber}.`
+    );
+    return;
+  }
 
-        const ch = message.mentions.channels.first();
-        if (!ch) {
-            return message.reply("❗ Укажи канал через #упоминание.\nПример: `!protectchannel #общий-чат`");
-        }
+  // -------------------------------------------
+  // !clearwarns @user
+  // -------------------------------------------
+  if (command === "clearwarns") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
+    }
 
+    const target =
+      message.mentions.members.first() ||
+      message.guild.members.cache.get(args[0]);
+
+    if (!target) {
+      return message.reply(
+        "❗ Использование: `!clearwarns @User`"
+      );
+    }
+
+    const userData = getUserData(message.guild.id, target.id);
+    userData.warns = [];
+    saveData();
+
+    await message.channel.send(
+      `🧹 | Все предупреждения пользователя ${target.user.tag} были очищены.`
+    );
+    return;
+  }
+
+  // -------------------------------------------
+  // !warns @user  (check warns)
+  // -------------------------------------------
+  if (command === "warns") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
+    }
+
+    const target =
+      message.mentions.members.first() ||
+      message.guild.members.cache.get(args[0]);
+
+    if (!target) {
+      return message.reply(
+        "❗ Использование: `!warns @User`"
+      );
+    }
+
+    const userData = getUserData(message.guild.id, target.id);
+    cleanupWarns(userData);
+    saveData();
+
+    if (userData.warns.length === 0) {
+      return message.channel.send(
+        `ℹ️ | У пользователя ${target.user.tag} нет активных предупреждений (последние 4 дня).`
+      );
+    }
+
+    const list = userData.warns
+      .map((w, i) => {
+        const date = new Date(w.timestamp).toLocaleString();
+        const mod = w.moderatorTag || w.moderatorId || "Неизвестно";
+        return `${i + 1}. ${w.reason} – ${date} (модератор: ${mod})`;
+      })
+      .join("\n");
+
+    await message.channel.send(
+      `⚠️ Активные предупреждения пользователя ${target.user.tag} (последние 4 дня):\n${list}`
+    );
+    return;
+  }
+
+  // -------------------------------------------
+  // !mute @user <duration> <reason>
+  // -------------------------------------------
+  if (command === "mute") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
+    }
+
+    const target =
+      message.mentions.members.first() ||
+      message.guild.members.cache.get(args[0]);
+    if (!target) {
+      return message.reply(
+        "❗ Использование: `!mute @User <время> <причина>`"
+      );
+    }
+
+    args.shift(); // remove mention/id
+    const durationStr = args.shift();
+    const durationMs = parseDuration(durationStr);
+
+    if (!durationMs) {
+      return message.reply(
+        "❗ Некорректное время. Примеры: `10m`, `1h`, `1d`."
+      );
+    }
+
+    const reason = args.join(" ") || "Причина не указана";
+
+    try {
+      const mutedRole = await getOrCreateMutedRole(message.guild);
+      await target.roles.add(
+        mutedRole,
+        `Manual mute for ${formatDuration(durationMs)}: ${reason}`
+      );
+
+      await message.channel.send(
+        `🔇 | Пользователь ${target.user.tag} получил мут на ${formatDuration(
+          durationMs
+        )}. Причина: ${reason}`
+      );
+
+      setTimeout(async () => {
         try {
-            await addProtectedChannel(message.guild.id, ch.id);
-            return message.reply(`✅ Канал ${ch} добавлен в список защищённых.`);
-        } catch (err) {
-            console.error("protectchannel failed:", err);
-            return message.reply("❗ Ошибка при добавлении защиты канала.");
-        }
-    }
-
-    // !unprotectchannel #channel
-    if (cmd === "!unprotectchannel") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❗ Эту команду может использовать только администратор.");
-        }
-
-        const ch = message.mentions.channels.first();
-        if (!ch) {
-            return message.reply("❗ Укажи канал через #упоминание.\nПример: `!unprotectchannel #общий-чат`");
-        }
-
-        try {
-            await removeProtectedChannel(message.guild.id, ch.id);
-            return message.reply(`✅ Канал ${ch} удалён из списка защищённых.`);
-        } catch (err) {
-            console.error("unprotectchannel failed:", err);
-            return message.reply("❗ Ошибка при удалении защиты канала.");
-        }
-    }
-
-    // !protectcategory <name>
-    if (cmd === "!protectcategory") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❗ Эту команду может использовать только администратор.");
-        }
-
-        const targetName = raw.slice("!protectcategory".length).trim();
-        if (!targetName) {
-            return message.reply("❗ Укажи точное название категории.\nПример: `!protectcategory 💬┃ОБЩЕНИЕ`");
-        }
-
-        const category = message.guild.channels.cache.find(
-            (c) => c.type === ChannelType.GuildCategory && c.name === targetName
-        );
-
-        if (!category) {
-            return message.reply("❗ Категория с таким названием не найдена.");
-        }
-
-        try {
-            await addProtectedCategory(message.guild.id, category.id);
-            return message.reply(`✅ Категория \`${category.name}\` добавлена в список защищённых.`);
-        } catch (err) {
-            console.error("protectcategory failed:", err);
-            return message.reply("❗ Ошибка при добавлении защиты категории.");
-        }
-    }
-
-    // !unprotectcategory <name>
-    if (cmd === "!unprotectcategory") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❗ Эту команду может использовать только администратор.");
-        }
-
-        const targetName = raw.slice("!unprotectcategory".length).trim();
-        if (!targetName) {
-            return message.reply("❗ Укажи точное название категории.\nПример: `!unprotectcategory 💬┃ОБЩЕНИЕ`");
-        }
-
-        const category = message.guild.channels.cache.find(
-            (c) => c.type === ChannelType.GuildCategory && c.name === targetName
-        );
-
-        if (!category) {
-            return message.reply("❗ Категория с таким названием не найдена.");
-        }
-
-        try {
-            await removeProtectedCategory(message.guild.id, category.id);
-            return message.reply(`✅ Категория \`${category.name}\` убрана из списка защищённых.`);
-        } catch (err) {
-            console.error("unprotectcategory failed:", err);
-            return message.reply("❗ Ошибка при удалении защиты категории.");
-        }
-    }
-
-    // ------------------------------------------------
-    // LUX SERVER SETUP
-    // ------------------------------------------------
-
-    if (cmd === "!setupserverlux") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❗ Эту команду может использовать только администратор.");
-        }
-
-        await message.reply("⏳ Начинаю настраивать структуру сервера StreetLife (российский люкс)...");
-
-        try {
-            await buildLuxLayout(message.guild);
-            await message.reply("✅ Структура категорий и каналов обновлена по роскошному макету.");
-        } catch (err) {
-            console.error("buildLuxLayout failed:", err);
-            await message.reply("❗ Ошибка при настройке структуры. См. логи бота.");
-        }
-
-        return;
-    }
-
-    // CLEAN EXTRA: !cleanextraserver
-    if (cmd === "!cleanextraserver") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❗ Эту команду может использовать только администратор.");
-        }
-
-        await message.reply(
-            "⚠️ Начинаю умную очистку: будут удалены категории и каналы, которых нет в макете и не защищены."
-        );
-
-        try {
-            await cleanExtraStructure(message.guild);
-            await message.reply("✅ Очистка завершена. Лишние категории/каналы удалены.");
-        } catch (err) {
-            console.error("cleanExtraStructure failed:", err);
-            await message.reply("❗ Ошибка при очистке. См. логи бота.");
-        }
-
-        return;
-    }
-
-    // DELETE CATEGORY: !deletecategory <name>
-    if (cmd === "!deletecategory") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❗ Эту команду может использовать только администратор.");
-        }
-
-        const targetName = raw.slice("!deletecategory".length).trim();
-        if (!targetName) {
-            return message.reply("❗ Укажи точное название категории.\nПример: `!deletecategory 💬┃ОБЩЕНИЕ`");
-        }
-
-        const result = await deleteCategoryByName(message.guild, targetName);
-
-        if (!result.ok && result.reason === "not_found") {
-            return message.reply("❗ Категория с таким названием не найдена.");
-        }
-        if (!result.ok && result.reason === "protected") {
-            return message.reply("❗ Эта категория защищена и не может быть удалена.");
-        }
-
-        return message.reply(`✅ Категория \`${targetName}\` и её каналы были удалены (кроме защищённых).`);
-    }
-
-    // DELETE CHANNEL: !deletechannel #mention
-    if (cmd === "!deletechannel") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❗ Эту команду может использовать только администратор.");
-        }
-
-        const targetChannel = message.mentions.channels.first();
-        if (!targetChannel) {
-            return message.reply("❗ Укажи канал через #упоминание. Пример: `!deletechannel #общий-чат`");
-        }
-
-        const protectedChannels = await getProtectedChannelIds(message.guild.id);
-        if (protectedChannels.includes(targetChannel.id)) {
-            return message.reply("❗ Этот канал защищён и не может быть удалён.");
-        }
-
-        try {
-            const name = targetChannel.name;
-            await targetChannel.delete("StreetLifeBot deletechannel");
-            return message.reply(`✅ Канал \`${name}\` удалён.`);
-        } catch (err) {
-            console.error("deletechannel failed:", err);
-            return message.reply("❗ Не удалось удалить канал. Проверь права бота.");
-        }
-    }
-
-    // ------------------------------------------------
-    // PASS / FAIL COMMANDS (Allowlist)
-    // ------------------------------------------------
-
-    if (content.startsWith("!прошел проверку")) {
-        if (!message.member || !hasCheckerRole(message.member)) {
-            return message.reply("❗ У вас нет прав использовать эту команду.");
-        }
-
-        const targetMember = message.mentions.members.first();
-        if (!targetMember) {
-            return message.reply("❗ Укажите пользователя через @mention.\nПример: `!прошел проверку @User`");
-        }
-
-        const allowId = process.env.ALLOWLIST_ROLE_ID?.trim();
-        const awaitingId = process.env.AWAITING_ALLOWLIST_ROLE_ID?.trim();
-
-        const allowRole = allowId ? message.guild.roles.cache.get(allowId) : null;
-        const awaitingRole = awaitingId ? message.guild.roles.cache.get(awaitingId) : null;
-
-        if (!allowRole) {
-            return message.reply("❗ Роль Allowlist не найдена. Проверьте ALLOWLIST_ROLE_ID в .env");
-        }
-
-        if (awaitingRole && targetMember.roles.cache.has(awaitingId)) {
-            await targetMember.roles.remove(awaitingRole).catch((err) => {
-                console.error("Failed to remove AwaitingAllowlist:", err);
-            });
-        }
-
-        try {
-            await targetMember.roles.add(allowRole);
-        } catch (err) {
-            console.error("Failed to add Allowlist:", err);
-            return message.reply("❗ Не удалось выдать роль Allowlist. Проверьте права бота.");
-        }
-
-        await message.channel.send(
-            `🎉 <@${targetMember.id}> успешно прошёл проверку и получил доступ к серверу **StreetLife RP — RU**. Добро пожаловать!`
-        );
-
-        try {
-            await targetMember.send(
-                "Здравствуйте!\n\n" +
-                "Поздравляем! Вы успешно прошли проверку на сервере **StreetLife RP — RU**.\n\n" +
-                "Вам выдана роль **Allowlist**, и теперь у Вас есть доступ к серверу.\n\n" +
-                "Добро пожаловать в наш проект!\n\n" +
-                "С уважением,\nАдминистрация StreetLife RP — RU"
+          if (target.roles.cache.has(mutedRole.id)) {
+            await target.roles.remove(
+              mutedRole,
+              "Auto unmute after manual mute duration"
             );
+          }
         } catch (err) {
-            console.error("Failed to send DM (pass):", err);
+          console.warn("Failed to auto-unmute:", err.message);
         }
+      }, durationMs);
+    } catch (err) {
+      console.error("Manual mute error:", err);
+      await message.channel.send(
+        "❌ Не удалось выдать мут (проверьте права/роль)."
+      );
+    }
+    return;
+  }
 
-        const passLogEmbed = new EmbedBuilder()
-            .setColor(0x2ecc71)
-            .setTitle("✅ Проверка пройдена")
-            .addFields(
-                { name: "Кандидат", value: `<@${targetMember.id}>`, inline: true },
-                { name: "Проверяющий", value: `<@${message.author.id}>`, inline: true }
-            )
-            .setTimestamp();
-
-        await sendResultLog(message.guild, { embeds: [passLogEmbed] });
-
-        return;
+  // -------------------------------------------
+  // !unmute @user
+  // -------------------------------------------
+  if (command === "unmute") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
     }
 
-    if (content.startsWith("!не прошел проверку")) {
-        if (!message.member || !hasCheckerRole(message.member)) {
-            return message.reply("❗ У вас нет прав использовать эту команду.");
-        }
+    const target =
+      message.mentions.members.first() ||
+      message.guild.members.cache.get(args[0]);
+    if (!target) {
+      return message.reply(
+        "❗ Использование: `!unmute @User`"
+      );
+    }
 
-        const targetMember = message.mentions.members.first();
-        if (!targetMember) {
-            return message.reply(
-                "❗ Укажите пользователя через @mention.\nПример: `!не прошел проверку @User причина...`"
-            );
-        }
+    try {
+      const mutedRole = await getOrCreateMutedRole(message.guild);
+      if (!target.roles.cache.has(mutedRole.id)) {
+        return message.reply("❗ У пользователя сейчас нет мута.");
+      }
+      await target.roles.remove(mutedRole, "Manual unmute");
+      await message.channel.send(
+        `🔊 | Мут пользователя ${target.user.tag} был снят.`
+      );
+    } catch (err) {
+      console.error("Unmute error:", err);
+      await message.channel.send(
+        "❌ Не удалось снять мут (проверьте права/роль)."
+      );
+    }
+    return;
+  }
 
-        const mention = `<@${targetMember.id}>`;
-        const altMention = `<@!${targetMember.id}>`;
-        let reasonPart = raw;
+  // -------------------------------------------
+  // !kick @user <reason>
+  // -------------------------------------------
+  if (command === "kick") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
+    }
 
-        reasonPart = reasonPart.replace(/^!не прошел проверку\s*/i, "");
-        reasonPart = reasonPart.replace(mention, "").replace(altMention, "").trim();
+    const target =
+      message.mentions.members.first() ||
+      message.guild.members.cache.get(args[0]);
+    if (!target) {
+      return message.reply(
+        "❗ Использование: `!kick @User <причина>`"
+      );
+    }
 
-        if (reasonPart.endsWith(".")) {
-            reasonPart = reasonPart.slice(0, -1).trim();
-        }
+    args.shift();
+    const reason = args.join(" ") || "Причина не указана";
 
-        const reasonText = reasonPart || "не указана";
+    try {
+      await target.kick(reason);
+      await message.channel.send(
+        `👢 | Пользователь ${target.user.tag} был кикнут. Причина: ${reason}`
+      );
+    } catch (err) {
+      console.error("Kick error:", err);
+      await message.channel.send(
+        "❌ Не удалось кикнуть пользователя (проверьте права)."
+      );
+    }
+    return;
+  }
 
-        const awaitingId = process.env.AWAITING_ALLOWLIST_ROLE_ID?.trim();
-        const awaitingRole = awaitingId ? message.guild.roles.cache.get(awaitingId) : null;
+  // -------------------------------------------
+  // !ban @user <duration> <reason>
+  // or: !ban @user <reason>  (permanent)
+// -------------------------------------------
+  if (command === "ban") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
+    }
 
-        if (awaitingRole && targetMember.roles.cache.has(awaitingId)) {
-            await targetMember.roles.remove(awaitingRole).catch((err) => {
-                console.error("Failed to remove AwaitingAllowlist on fail:", err);
-            });
-        }
+    const targetUser =
+      message.mentions.users.first() ||
+      (args[0] && await client.users.fetch(args[0]).catch(() => null));
 
+    if (!targetUser) {
+      return message.reply(
+        "❗ Использование: `!ban @User <время> <причина>` или `!ban @User <причина>` для пермбана."
+      );
+    }
+
+    args.shift();
+    const durationStr = args[0];
+    let durationMs = parseDuration(durationStr);
+    let reason;
+
+    if (durationMs) {
+      args.shift();
+      reason = args.join(" ") || "Причина не указана";
+    } else {
+      durationMs = null;
+      reason = args.join(" ") || "Причина не указана";
+    }
+
+    try {
+      const guildMember = await message.guild.members
+        .fetch(targetUser.id)
+        .catch(() => null);
+
+      const userData = getUserData(message.guild.id, targetUser.id);
+      userData.bans.push({
+        timestamp: Date.now(),
+        durationMs,
+        reason,
+        moderatorId: message.author.id,
+        moderatorTag: message.author.tag,
+      });
+      userData.banLevel = Math.min(userData.banLevel + 1, 4);
+      saveData();
+
+      await message.guild.members.ban(targetUser.id, { reason });
+
+      if (durationMs) {
         await message.channel.send(
-            `❌ <@${targetMember.id}> не прошёл проверку. Можно попробовать позже.\nПричина: ${reasonText}`
+          `⛔ | Пользователь ${targetUser.tag} забанен на ${formatDuration(
+            durationMs
+          )}. Причина: ${reason}`
         );
 
-        const dmText = buildFailDM(reasonText);
-        try {
-            await targetMember.send(dmText);
-        } catch (err) {
-            console.error("Failed to send DM (fail):", err);
-        }
-
-        const failLogEmbed = new EmbedBuilder()
-            .setColor(0xe74c3c)
-            .setTitle("❌ Проверка не пройдена")
-            .addFields(
-                { name: "Кандидат", value: `<@${targetMember.id}>`, inline: true },
-                { name: "Проверяющий", value: `<@${message.author.id}>`, inline: true },
-                { name: "Причина", value: reasonText, inline: false }
-            )
-            .setTimestamp();
-
-        await sendResultLog(message.guild, { embeds: [failLogEmbed] });
-
-        return;
+        setTimeout(async () => {
+          try {
+            await message.guild.members.unban(
+              targetUser.id,
+              "Auto unban after timed ban"
+            );
+          } catch (err) {
+            console.warn(
+              "Failed to auto-unban (maybe already unbanned):",
+              err.message
+            );
+          }
+        }, durationMs);
+      } else {
+        await message.channel.send(
+          `⛔ | Пользователь ${targetUser.tag} получил перманентный бан. Причина: ${reason}`
+        );
+      }
+    } catch (err) {
+      console.error("Ban error:", err);
+      await message.channel.send(
+        "❌ Не удалось забанить пользователя (проверьте права)."
+      );
     }
+    return;
+  }
+
+  // -------------------------------------------
+  // !unban <UserID> <reason>
+// -------------------------------------------
+  if (command === "unban") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
+    }
+
+    const userId = args.shift();
+    if (!userId) {
+      return message.reply(
+        "❗ Использование: `!unban <UserID> <причина>`"
+      );
+    }
+
+    const reason = args.join(" ") || "Причина не указана";
+
+    try {
+      await message.guild.members.unban(userId, reason);
+      await message.channel.send(
+        `🔓 | Пользователь с ID **${userId}** был разбанен. Причина: ${reason}`
+      );
+    } catch (err) {
+      console.error("Unban error:", err);
+      await message.channel.send(
+        "❌ Не удалось разбанить пользователя (возможно, он не в бане или нет прав)."
+      );
+    }
+    return;
+  }
+
+  // -------------------------------------------
+  // !bans @UserID/mention  (show ban history)
+// -------------------------------------------
+  if (command === "bans") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
+    }
+
+    const mention =
+      message.mentions.members.first() ||
+      message.guild.members.cache.get(args[0]);
+    const id = mention ? mention.id : args[0];
+
+    if (!id) {
+      return message.reply(
+        "❗ Использование: `!bans @User` или `!bans <UserID>`"
+      );
+    }
+
+    const userData = getUserData(message.guild.id, id);
+
+    if (!userData.bans || userData.bans.length === 0) {
+      return message.channel.send(
+        `ℹ️ | Для этого пользователя нет записей о банах.`
+      );
+    }
+
+    const list = userData.bans
+      .map((b, i) => {
+        const date = new Date(b.timestamp).toLocaleString();
+        const duration =
+          b.durationMs == null ? "перманент" : formatDuration(b.durationMs);
+        const mod = b.moderatorTag || b.moderatorId || "Неизвестно";
+        return `${i + 1}. ${date} – ${duration} – ${b.reason} (модератор: ${mod})`;
+      })
+      .join("\n");
+
+    await message.channel.send(
+      `⛔ История банов для пользователя ID ${id}:\n${list}`
+    );
+    return;
+  }
+
+  // -------------------------------------------
+  // !clearbans @UserID/mention  (clear ban history)
+// -------------------------------------------
+  if (command === "clearbans") {
+    if (!moderator) {
+      return message.reply("❌ У вас нет прав для этой команды.");
+    }
+
+    const mention =
+      message.mentions.members.first() ||
+      message.guild.members.cache.get(args[0]);
+    const id = mention ? mention.id : args[0];
+
+    if (!id) {
+      return message.reply(
+        "❗ Использование: `!clearbans @User` или `!clearbans <UserID>`"
+      );
+    }
+
+    const userData = getUserData(message.guild.id, id);
+    userData.bans = [];
+    saveData();
+
+    await message.channel.send(
+      `🧹 | История банов пользователя ID ${id} была очищена.`
+    );
+    return;
+  }
+
+  // -------------------------------------------
+  // !help
+  // -------------------------------------------
+  if (command === "help") {
+    const helpText =
+      "📋 Команды модерации:\n" +
+      "`!warn @User <причина>` – выдать предупреждение (с авто-мутами/банами)\n" +
+      "`!unwarn @User <номер>` – удалить предупреждение по номеру\n" +
+      "`!clearwarns @User` – очистить все предупреждения пользователя\n" +
+      "`!warns @User` – показать активные предупреждения (последние 4 дня)\n" +
+      "`!mute @User <время> <причина>` – мут на время (пример: 10m, 1h, 1d)\n" +
+      "`!unmute @User` – снять мут\n" +
+      "`!kick @User <причина>` – кикнуть пользователя\n" +
+      "`!ban @User <время> <причина>` – бан на время\n" +
+      "`!ban @User <причина>` – перманентный бан\n" +
+      "`!unban <UserID> <причина>` – разбан по ID\n" +
+      "`!bans @User` / `!bans <UserID>` – показать историю банов\n" +
+      "`!clearbans @User` / `!clearbans <UserID>` – очистить историю банов\n\n" +
+      "⏱ Формат времени: `s` = секунды, `m` = минуты, `h` = часы, `d` = дни.\n" +
+      "⚠️ Предупреждения считаются только за последние 4 дня (кулдаун 4 дня).";
+
+    await message.channel.send(helpText);
+    return;
+  }
 });
 
-// ----------------------------------------------------
-// BUTTON INTERACTIONS
-// ----------------------------------------------------
-
-client.on("interactionCreate", async (interaction) => {
-    if (!interaction.isButton()) return;
-
-    if (interaction.customId === "get_access") {
-        const roleId = process.env.AWAITING_ALLOWLIST_ROLE_ID?.trim();
-
-        if (!roleId) {
-            return interaction.reply({
-                content: "❗ Роль AwaitingAllowlist не настроена. Сообщи администрации.",
-                ephemeral: true
-            });
-        }
-
-        const member = interaction.member;
-        const role = interaction.guild.roles.cache.get(roleId);
-
-        if (!role) {
-            return interaction.reply({
-                content: "❗ Роль AwaitingAllowlist не найдена на сервере. Сообщи владельцу.",
-                ephemeral: true
-            });
-        }
-
-        if (member.roles.cache.has(roleId)) {
-            return interaction.reply({
-                content: "✅ У тебя уже есть роль ожидания проверки.",
-                ephemeral: true
-            });
-        }
-
-        try {
-            await member.roles.add(role);
-            console.log(`Role AwaitingAllowlist given to ${member.user.tag}`);
-
-            return interaction.reply({
-                content: "✅ Тебе выдана роль **AwaitingAllowlist**. Ожидай администратора для проверки.",
-                ephemeral: true
-            });
-        } catch (err) {
-            console.error("Failed to add AwaitingAllowlist role:", err);
-            return interaction.reply({
-                content: "❗ Не удалось выдать роль. Сообщи администрации.",
-                ephemeral: true
-            });
-        }
-    }
-});
-
-// ----------------------------------------------------
-// TOKEN & LOGIN
-// ----------------------------------------------------
-
-console.log("Token length:", process.env.TOKEN?.length);
+// -----------------------------------------------------
+// Login
+// -----------------------------------------------------
 client.login(process.env.TOKEN);
