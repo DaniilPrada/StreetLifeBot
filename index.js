@@ -83,6 +83,17 @@ const CHECKER_ROLE_IDS = (process.env.CHECKER_ROLE_IDS || "")
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
 
+// NEW: protected channels / categories (never delete)
+const PROTECTED_CHANNEL_IDS = (process.env.PROTECTED_CHANNEL_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+
+const PROTECTED_CATEGORY_IDS = (process.env.PROTECTED_CATEGORY_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+
 // -------------------- RULES EMBED --------------------
 
 const rulesEmbed = new EmbedBuilder()
@@ -392,6 +403,8 @@ client.once("ready", () => {
     console.log("GET_ACCESS_CHANNEL_ID from .env:", process.env.GET_ACCESS_CHANNEL_ID);
     console.log("LOG_RESULTS_CHANNEL_ID from .env:", process.env.LOG_RESULTS_CHANNEL_ID);
     console.log("CHECKER_ROLE_IDS from .env:", CHECKER_ROLE_IDS);
+    console.log("PROTECTED_CHANNEL_IDS from .env:", PROTECTED_CHANNEL_IDS);
+    console.log("PROTECTED_CATEGORY_IDS from .env:", PROTECTED_CATEGORY_IDS);
 });
 
 // Auto welcome when a new member joins
@@ -521,7 +534,28 @@ client.on("messageCreate", async (message) => {
                     console.log(`Category already exists: ${categoryDef.name}`);
                 }
 
-                // Create child channels under category
+                // If category itself is protected – remember
+                const categoryProtected =
+                    PROTECTED_CATEGORY_IDS.includes(category.id);
+
+                // Build set of required names for this category
+                const requiredNames = new Set(
+                    categoryDef.children.map((c) => c.name)
+                );
+
+                // CLEANUP: delete channels in this category that are NOT in layout and NOT protected
+                for (const ch of guild.channels.cache.filter(
+                    (c) => c.parentId === category.id
+                ).values()) {
+                    if (requiredNames.has(ch.name)) continue; // needed
+                    if (PROTECTED_CHANNEL_IDS.includes(ch.id)) continue; // protected by ID
+                    if (categoryProtected) continue; // whole category protected
+
+                    console.log(`Deleting extra channel: ${ch.name} (${ch.id})`);
+                    await ch.delete("StreetLifeBot cleanup (not in layout)");
+                }
+
+                // CREATE / ENSURE: child channels under category
                 for (const chDef of categoryDef.children) {
                     const existing = guild.channels.cache.find(
                         (c) =>
@@ -542,10 +576,12 @@ client.on("messageCreate", async (message) => {
                     await guild.channels.create({
                         name: chDef.name,
                         type,
-                        parent: category
+                        parent: category.id
                     });
 
-                    console.log(`Created channel: ${chDef.name} in category ${categoryDef.name}`);
+                    console.log(
+                        `Created channel: ${chDef.name} in category ${categoryDef.name}`
+                    );
                 }
             }
 
