@@ -13,6 +13,17 @@ const {
     PermissionsBitField
 } = require("discord.js");
 
+// DB helpers for protection
+const {
+    initDb,
+    getProtectedCategoryIds,
+    getProtectedChannelIds,
+    addProtectedCategory,
+    removeProtectedCategory,
+    addProtectedChannel,
+    removeProtectedChannel
+} = require("./db");
+
 // ----------------------------------------------------
 // CLIENT
 // ----------------------------------------------------
@@ -26,6 +37,9 @@ const client = new Client({
     ]
 });
 
+// Init DB
+initDb();
+
 // ----------------------------------------------------
 // ENV SHORTCUTS
 // ----------------------------------------------------
@@ -37,21 +51,9 @@ const CHECKER_ROLE_IDS = (process.env.CHECKER_ROLE_IDS || "")
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
 
-// Protected categories/channels (never delete)
-const PROTECTED_CATEGORY_IDS = (process.env.PROTECTED_CATEGORY_IDS || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0);
-
-const PROTECTED_CHANNEL_IDS = (process.env.PROTECTED_CHANNEL_IDS || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter((id) => id.length > 0);
-
 // ----------------------------------------------------
 // RUSSIAN LUX SERVER LAYOUT
 // ----------------------------------------------------
-// Each object = category, children = channels inside
 
 const SERVER_LAYOUT = [
     {
@@ -421,10 +423,9 @@ function buildFailDM(reasonText) {
 }
 
 // ----------------------------------------------------
-// SERVER LAYOUT HELPERS (BUILD / CLEAN / DELETE)
+// SERVER LAYOUT HELPERS
 // ----------------------------------------------------
 
-// Create or get category by name
 async function findOrCreateCategory(guild, name) {
     let category = guild.channels.cache.find(
         (c) => c.type === ChannelType.GuildCategory && c.name === name
@@ -443,12 +444,9 @@ async function findOrCreateCategory(guild, name) {
     return category;
 }
 
-// Create channel under specific category
 async function findOrCreateChannelInCategory(guild, category, def) {
     const existing = guild.channels.cache.find(
-        (c) =>
-            c.name === def.name &&
-            c.parentId === category.id
+        (c) => c.name === def.name && c.parentId === category.id
     );
 
     if (existing) {
@@ -469,77 +467,89 @@ async function findOrCreateChannelInCategory(guild, category, def) {
     return ch;
 }
 
-// Main function: build categories + cleanup inside them
+// Build layout + cleanup inside categories
 async function buildLuxLayout(guild) {
+    const protectedCategories = await getProtectedCategoryIds(guild.id);
+    const protectedChannels = await getProtectedChannelIds(guild.id);
+
     for (const categoryDef of SERVER_LAYOUT) {
         const category = await findOrCreateCategory(guild, categoryDef.name);
+        const isCategoryProtected = protectedCategories.includes(category.id);
 
-        const isCategoryProtected = PROTECTED_CATEGORY_IDS.includes(category.id);
         const requiredNames = new Set(categoryDef.children.map((c) => c.name));
 
-        // Cleanup inside this category (remove channels not in layout, unless protected)
-        for (const ch of guild.channels.cache.filter(
-            (c) => c.parentId === category.id
-        ).values()) {
+        // Cleanup inside category
+        for (const ch of guild.channels.cache
+            .filter((c) => c.parentId === category.id)
+            .values()) {
             if (requiredNames.has(ch.name)) continue;
-            if (PROTECTED_CHANNEL_IDS.includes(ch.id)) continue;
+            if (protectedChannels.includes(ch.id)) continue;
             if (isCategoryProtected) continue;
 
             console.log(`Deleting extra channel: ${ch.name} (${ch.id}) in ${category.name}`);
             await ch.delete("StreetLifeBot cleanup: not in layout");
         }
 
-        // Ensure required channels exist
+        // Ensure required channels
         for (const chDef of categoryDef.children) {
             await findOrCreateChannelInCategory(guild, category, chDef);
         }
     }
 }
 
-// Extra cleanup: delete categories and root channels NOT in layout and NOT protected
+// Delete categories/channels not in layout and not protected
 async function cleanExtraStructure(guild) {
+    const protectedCategories = await getProtectedCategoryIds(guild.id);
+    const protectedChannels = await getProtectedChannelIds(guild.id);
+
     const layoutCategoryNames = new Set(SERVER_LAYOUT.map((c) => c.name));
 
-    // Delete categories not in layout and not protected
-    for (const cat of guild.channels.cache.filter(
-        (c) => c.type === ChannelType.GuildCategory
-    ).values()) {
+    // Delete categories not in layout
+    for (const cat of guild.channels.cache
+        .filter((c) => c.type === ChannelType.GuildCategory)
+        .values()) {
         if (layoutCategoryNames.has(cat.name)) continue;
-        if (PROTECTED_CATEGORY_IDS.includes(cat.id)) continue;
+        if (protectedCategories.includes(cat.id)) continue;
 
         console.log(`Deleting extra category: ${cat.name} (${cat.id})`);
         await cat.delete("StreetLifeBot cleanextraserver: category not in layout");
     }
 
-    // Delete text/voice channels without parent (root) that are not protected
-    for (const ch of guild.channels.cache.filter(
-        (c) =>
-            (c.type === ChannelType.GuildText || c.type === ChannelType.GuildVoice) &&
-            !c.parentId
-    ).values()) {
-        if (PROTECTED_CHANNEL_IDS.includes(ch.id)) continue;
+    // Delete root channels not protected
+    for (const ch of guild.channels.cache
+        .filter(
+            (c) =>
+                (c.type === ChannelType.GuildText ||
+                    c.type === ChannelType.GuildVoice) &&
+                !c.parentId
+        )
+        .values()) {
+        if (protectedChannels.includes(ch.id)) continue;
 
         console.log(`Deleting extra root channel: ${ch.name} (${ch.id})`);
         await ch.delete("StreetLifeBot cleanextraserver: root channel not protected");
     }
 }
 
-// Delete entire category and its channels
+// Delete full category by name
 async function deleteCategoryByName(guild, name) {
+    const protectedCategories = await getProtectedCategoryIds(guild.id);
+    const protectedChannels = await getProtectedChannelIds(guild.id);
+
     const category = guild.channels.cache.find(
         (c) => c.type === ChannelType.GuildCategory && c.name === name
     );
 
     if (!category) return { ok: false, reason: "not_found" };
-    if (PROTECTED_CATEGORY_IDS.includes(category.id)) {
+    if (protectedCategories.includes(category.id)) {
         return { ok: false, reason: "protected" };
     }
 
-    // Delete children
-    for (const ch of guild.channels.cache.filter(
-        (c) => c.parentId === category.id
-    ).values()) {
-        if (PROTECTED_CHANNEL_IDS.includes(ch.id)) continue;
+    for (const ch of guild.channels.cache
+        .filter((c) => c.parentId === category.id)
+        .values()) {
+        if (protectedChannels.includes(ch.id)) continue;
+
         console.log(`Deleting channel in category delete: ${ch.name} (${ch.id})`);
         await ch.delete("StreetLifeBot deletecategory");
     }
@@ -563,8 +573,6 @@ client.once("ready", () => {
     console.log("GET_ACCESS_CHANNEL_ID:", process.env.GET_ACCESS_CHANNEL_ID);
     console.log("LOG_RESULTS_CHANNEL_ID:", process.env.LOG_RESULTS_CHANNEL_ID);
     console.log("CHECKER_ROLE_IDS:", CHECKER_ROLE_IDS);
-    console.log("PROTECTED_CATEGORY_IDS:", PROTECTED_CATEGORY_IDS);
-    console.log("PROTECTED_CHANNEL_IDS:", PROTECTED_CHANNEL_IDS);
 });
 
 client.on("guildMemberAdd", async (member) => {
@@ -661,8 +669,109 @@ client.on("messageCreate", async (message) => {
     }
 
     // ------------------------------------------------
-    // LUX SERVER SETUP: !setupserverlux
+    // PROTECTION COMMANDS
     // ------------------------------------------------
+
+    // !protectchannel #channel
+    if (cmd === "!protectchannel") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❗ Эту команду может использовать только администратор.");
+        }
+
+        const ch = message.mentions.channels.first();
+        if (!ch) {
+            return message.reply("❗ Укажи канал через #упоминание.\nПример: `!protectchannel #общий-чат`");
+        }
+
+        try {
+            await addProtectedChannel(message.guild.id, ch.id);
+            return message.reply(`✅ Канал ${ch} добавлен в список защищённых.`);
+        } catch (err) {
+            console.error("protectchannel failed:", err);
+            return message.reply("❗ Ошибка при добавлении защиты канала.");
+        }
+    }
+
+    // !unprotectchannel #channel
+    if (cmd === "!unprotectchannel") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❗ Эту команду может использовать только администратор.");
+        }
+
+        const ch = message.mentions.channels.first();
+        if (!ch) {
+            return message.reply("❗ Укажи канал через #упоминание.\nПример: `!unprotectchannel #общий-чат`");
+        }
+
+        try {
+            await removeProtectedChannel(message.guild.id, ch.id);
+            return message.reply(`✅ Канал ${ch} удалён из списка защищённых.`);
+        } catch (err) {
+            console.error("unprotectchannel failed:", err);
+            return message.reply("❗ Ошибка при удалении защиты канала.");
+        }
+    }
+
+    // !protectcategory <name>
+    if (cmd === "!protectcategory") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❗ Эту команду может использовать только администратор.");
+        }
+
+        const targetName = raw.slice("!protectcategory".length).trim();
+        if (!targetName) {
+            return message.reply("❗ Укажи точное название категории.\nПример: `!protectcategory 💬┃ОБЩЕНИЕ`");
+        }
+
+        const category = message.guild.channels.cache.find(
+            (c) => c.type === ChannelType.GuildCategory && c.name === targetName
+        );
+
+        if (!category) {
+            return message.reply("❗ Категория с таким названием не найдена.");
+        }
+
+        try {
+            await addProtectedCategory(message.guild.id, category.id);
+            return message.reply(`✅ Категория \`${category.name}\` добавлена в список защищённых.`);
+        } catch (err) {
+            console.error("protectcategory failed:", err);
+            return message.reply("❗ Ошибка при добавлении защиты категории.");
+        }
+    }
+
+    // !unprotectcategory <name>
+    if (cmd === "!unprotectcategory") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❗ Эту команду может использовать только администратор.");
+        }
+
+        const targetName = raw.slice("!unprotectcategory".length).trim();
+        if (!targetName) {
+            return message.reply("❗ Укажи точное название категории.\nПример: `!unprotectcategory 💬┃ОБЩЕНИЕ`");
+        }
+
+        const category = message.guild.channels.cache.find(
+            (c) => c.type === ChannelType.GuildCategory && c.name === targetName
+        );
+
+        if (!category) {
+            return message.reply("❗ Категория с таким названием не найдена.");
+        }
+
+        try {
+            await removeProtectedCategory(message.guild.id, category.id);
+            return message.reply(`✅ Категория \`${category.name}\` убрана из списка защищённых.`);
+        } catch (err) {
+            console.error("unprotectcategory failed:", err);
+            return message.reply("❗ Ошибка при удалении защиты категории.");
+        }
+    }
+
+    // ------------------------------------------------
+    // LUX SERVER SETUP
+    // ------------------------------------------------
+
     if (cmd === "!setupserverlux") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❗ Эту команду может использовать только администратор.");
@@ -681,10 +790,7 @@ client.on("messageCreate", async (message) => {
         return;
     }
 
-    // ------------------------------------------------
     // CLEAN EXTRA: !cleanextraserver
-    // deletes categories/channels not in layout and not protected
-    // ------------------------------------------------
     if (cmd === "!cleanextraserver") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❗ Эту команду может использовать только администратор.");
@@ -705,9 +811,7 @@ client.on("messageCreate", async (message) => {
         return;
     }
 
-    // ------------------------------------------------
-    // DELETE CATEGORY: !deletecategory <exact_name>
-    // ------------------------------------------------
+    // DELETE CATEGORY: !deletecategory <name>
     if (cmd === "!deletecategory") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❗ Эту команду может использовать только администратор.");
@@ -724,15 +828,13 @@ client.on("messageCreate", async (message) => {
             return message.reply("❗ Категория с таким названием не найдена.");
         }
         if (!result.ok && result.reason === "protected") {
-            return message.reply("❗ Эта категория защищена и не может быть удалена (в PROTECTED_CATEGORY_IDS).");
+            return message.reply("❗ Эта категория защищена и не может быть удалена.");
         }
 
         return message.reply(`✅ Категория \`${targetName}\` и её каналы были удалены (кроме защищённых).`);
     }
 
-    // ------------------------------------------------
     // DELETE CHANNEL: !deletechannel #mention
-    // ------------------------------------------------
     if (cmd === "!deletechannel") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❗ Эту команду может использовать только администратор.");
@@ -743,7 +845,8 @@ client.on("messageCreate", async (message) => {
             return message.reply("❗ Укажи канал через #упоминание. Пример: `!deletechannel #общий-чат`");
         }
 
-        if (PROTECTED_CHANNEL_IDS.includes(targetChannel.id)) {
+        const protectedChannels = await getProtectedChannelIds(message.guild.id);
+        if (protectedChannels.includes(targetChannel.id)) {
             return message.reply("❗ Этот канал защищён и не может быть удалён.");
         }
 
@@ -758,10 +861,9 @@ client.on("messageCreate", async (message) => {
     }
 
     // ------------------------------------------------
-    // PASS / FAIL COMMANDS
+    // PASS / FAIL COMMANDS (Allowlist)
     // ------------------------------------------------
 
-    // PASS: !прошел проверку @User
     if (content.startsWith("!прошел проверку")) {
         if (!message.member || !hasCheckerRole(message.member)) {
             return message.reply("❗ У вас нет прав использовать эту команду.");
@@ -825,7 +927,6 @@ client.on("messageCreate", async (message) => {
         return;
     }
 
-    // FAIL: !не прошел проверку @User причина...
     if (content.startsWith("!не прошел проверку")) {
         if (!message.member || !hasCheckerRole(message.member)) {
             return message.reply("❗ У вас нет прав использовать эту команду.");
